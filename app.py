@@ -7,8 +7,11 @@ import os
 import requests
 from datetime import datetime, timedelta
 
+# ==================== ID DO GRUPO ATUALIZADO ====================
 TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
-CHAT_ID_TELEGRAM = "5145135200"
+CHAT_ID_TELEGRAM = "-1003879813604" 
+# ================================================================
+
 TICKER_OURO = "GC=F" 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
@@ -17,7 +20,7 @@ def enviar_alerta_telegram(mensagem):
         print(f"[Aviso Sem Telegram]: {mensagem}")
         return
     url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
     try: 
         requests.post(url, json=payload, timeout=10)
     except: 
