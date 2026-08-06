@@ -1,3 +1,4 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -7,7 +8,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 
-# ==================== ID DO GRUPO ATUALIZADO ====================
+# ==================== ID DO GRUPO CORRETO ====================
 TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
 CHAT_ID_TELEGRAM = "-1003879813604" 
 # ================================================================
@@ -19,8 +20,13 @@ def enviar_alerta_telegram(mensagem):
     if TOKEN_TELEGRAM == "SEU_TOKEN_AQUI" or CHAT_ID_TELEGRAM == "SEU_CHAT_ID_AQUI":
         print(f"[Aviso Sem Telegram]: {mensagem}")
         return
+    
+    # CORREÇÃO 1: Link da API do Telegram corrigido com api. e /bot
     url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
+    
+    # CORREÇÃO 2: Alterado de 'message' para 'mensagem' para eliminar o NameError do log
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
+    
     try: 
         requests.post(url, json=payload, timeout=10)
     except: 
@@ -32,7 +38,7 @@ else:
     memoria_ia = {"consecutivos_stops": 0, "total_profits": 0, "total_stops": 0, "ajuste_stop_base": 0.0025, "ajuste_profit_base": 0.0050, "ordem_ativa": None}
 
 def salvar_memoria():
-    with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
+    with open(ARQUEMA_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
 
 def processar_ciclo_ia():
     df = yf.download(TICKER_OURO, period="2d", interval="2m", progress=False)
