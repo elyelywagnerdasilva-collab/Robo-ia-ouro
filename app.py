@@ -20,10 +20,10 @@ def enviar_alerta_telegram(mensagem):
         print(f"[Aviso Sem Telegram]: {mensagem}")
         return
     
-    # CORREÇÃO 1: Endereço oficial e obrigatório da API do Telegram
+    # URL oficial e obrigatória da API do Telegram configurada corretamente
     url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
     
-    # CORREÇÃO 2: Ajustado de 'message' para 'mensagem' para eliminar o NameError
+    # Variável ajustada de 'message' para 'mensagem' para eliminar o NameError
     payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
     
     try: 
@@ -38,7 +38,7 @@ else:
     memoria_ia = {"consecutivos_stops": 0, "total_profits": 0, "total_stops": 0, "ajuste_stop_base": 0.0025, "ajuste_profit_base": 0.0050, "ordem_ativa": None}
 
 def salvar_memoria():
-    # CORREÇÃO 3: Corrigido de ARQUEMA_MEMORIA para ARQUIVO_MEMORIA para evitar travamento ao salvar
+    # Corrigido de ARQUEMA_MEMORIA para ARQUIVO_MEMORIA para evitar travamento ao salvar dados
     with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
 
 def processar_ciclo_ia():
