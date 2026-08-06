@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -9,7 +8,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# LINK DIRETO DA API DO TELEGRAM - SEM VARIÁVEIS SEPARADAS
+# LINK DEFINITIVO - BARRA ADICIONADA DEPOIS DE 'BOT'
 # ================================================================
 URL_DIRETA_TELEGRAM = "https://telegram.org"
 CHAT_ID_DO_GRUPO = "-1003879813604"
@@ -18,7 +17,6 @@ TICKER_OURO = "GC=F"
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
 def enviar_alerta_telegram(mensagem):
-    # O link vai direto e completo para a API oficial do Telegram
     payload = {"chat_id": CHAT_ID_DO_GRUPO, "text": mensagem, "parse_mode": "Markdown"}
     try: 
         response = requests.post(URL_DIRETA_TELEGRAM, json=payload, timeout=10)
