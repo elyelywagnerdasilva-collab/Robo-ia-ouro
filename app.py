@@ -18,7 +18,7 @@ def enviar_alerta_telegram(mensagem):
         print(f"[Aviso Sem Telegram]: {mensagem}")
         return
     url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
     try: requests.post(url, json=payload, timeout=10)
     except: pass
 
