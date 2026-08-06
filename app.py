@@ -8,19 +8,20 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# LINK DEFINITIVO - BARRA ADICIONADA DEPOIS DE 'BOT'
+# CONFIGURAÇÃO CORRETA E DIRETAMENTE EMBUTIDA NO CÓDIGO
 # ================================================================
-URL_DIRETA_TELEGRAM = "https://telegram.org"
-CHAT_ID_DO_GRUPO = "-1003879813604"
-
+TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
+CHAT_ID_TELEGRAM = "-1003879813604"
 TICKER_OURO = "GC=F" 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
 def enviar_alerta_telegram(mensagem):
-    payload = {"chat_id": CHAT_ID_DO_GRUPO, "text": mensagem, "parse_mode": "Markdown"}
+    # Link estruturado de forma exata de acordo com a API oficial
+    url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
     try: 
-        response = requests.post(URL_DIRETA_TELEGRAM, json=payload, timeout=10)
-        print(f"[Resposta Telegram]: Status {response.status_code} - {response.text}")
+        response = requests.post(url, json=payload, timeout=10)
+        print(f"[Resposta Telegram]: Status {response.status_code}")
     except Exception as e: 
         print(f"[Erro de Conexão]: {e}")
 
