@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -8,8 +7,8 @@ import os
 import requests
 from datetime import datetime, timedelta
 
-TOKEN_TELEGRAM = os.environ.get("TOKEN_TELEGRAM", "SEU_TOKEN_AQUI")
-CHAT_ID_TELEGRAM = os.environ.get("CHAT_ID_TELEGRAM", "SEU_CHAT_ID_AQUI")
+TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
+CHAT_ID_TELEGRAM = "5145135200"
 TICKER_OURO = "GC=F" 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
