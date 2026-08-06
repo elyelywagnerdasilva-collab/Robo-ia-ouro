@@ -17,13 +17,11 @@ def enviar_alerta_telegram(mensagem):
     if TOKEN_TELEGRAM == "SEU_TOKEN_AQUI" or CHAT_ID_TELEGRAM == "SEU_CHAT_ID_AQUI":
         print(f"[Aviso Sem Telegram]: {mensagem}")
         return
-url = f"https:// api .telegram.org{TOKEN_TELEGRAM}/sendMessage"
-
+    url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
     payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
     try: requests.post(url, json=payload, timeout=10)
     except: pass
-
-
+    except: pass
 if os.path.exists(ARQUIVO_MEMORIA):
     with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
 else:
