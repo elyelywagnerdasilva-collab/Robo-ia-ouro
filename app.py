@@ -1,3 +1,4 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -8,27 +9,20 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# CREDENCIAIS CONFIGURADAS DE FORMA DEFINITIVA
+# LINK DIRETO DA API DO TELEGRAM - SEM VARIÁVEIS SEPARADAS
 # ================================================================
-TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
-CHAT_ID_TELEGRAM = "-1003879813604" 
+URL_DIRETA_TELEGRAM = "https://telegram.org"
+CHAT_ID_DO_GRUPO = "-1003879813604"
+
 TICKER_OURO = "GC=F" 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
 def enviar_alerta_telegram(mensagem):
-    if TOKEN_TELEGRAM == "SEU_TOKEN_AQUI" or CHAT_ID_TELEGRAM == "SEU_CHAT_ID_AQUI":
-        print(f"[Aviso Sem Telegram]: {mensagem}")
-        return
-    
-    # URL oficial e obrigatória da API do Telegram configurada corretamente
-    url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
-    
-    # Variável ajustada de 'message' para 'mensagem' para eliminar o NameError
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
-    
+    # O link vai direto e completo para a API oficial do Telegram
+    payload = {"chat_id": CHAT_ID_DO_GRUPO, "text": mensagem, "parse_mode": "Markdown"}
     try: 
-        response = requests.post(url, json=payload, timeout=10)
-        print(f"[Resposta Telegram]: Status {response.status_code}")
+        response = requests.post(URL_DIRETA_TELEGRAM, json=payload, timeout=10)
+        print(f"[Resposta Telegram]: Status {response.status_code} - {response.text}")
     except Exception as e: 
         print(f"[Erro de Conexão]: {e}")
 
@@ -38,7 +32,6 @@ else:
     memoria_ia = {"consecutivos_stops": 0, "total_profits": 0, "total_stops": 0, "ajuste_stop_base": 0.0025, "ajuste_profit_base": 0.0050, "ordem_ativa": None}
 
 def salvar_memoria():
-    # Corrigido de ARQUEMA_MEMORIA para ARQUIVO_MEMORIA para evitar travamento ao salvar dados
     with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
 
 def processar_ciclo_ia():
