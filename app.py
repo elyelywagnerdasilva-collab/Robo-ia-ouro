@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -17,7 +16,7 @@ TICKER_OURO = "GC=F"
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
 def enviar_alerta_discord(mensagem):
-    payload = {"content": message := mensagem}
+    payload = {"content": mensagem}
     try: 
         response = requests.post(URL_DISCORD_WEBHOOK, json=payload, timeout=10)
         print(f"[Resposta Discord]: Status {response.status_code}")
