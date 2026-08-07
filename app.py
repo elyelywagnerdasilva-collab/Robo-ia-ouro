@@ -1,3 +1,4 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -8,22 +9,21 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# CONFIGURAÇÃO CORRETA E DIRETAMENTE EMBUTIDA NO CÓDIGO
+# CONFIGURAÇÃO DEFINITIVA - LINK DO SEU DISCORD INTEGRADO
 # ================================================================
-TOKEN_TELEGRAM = "8351646305:AAFCN6_ymS3Qb8kA4PxqyfT7x0Zi-bpTokA"
-CHAT_ID_TELEGRAM = "-1003879813604"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1535306162789032046/KKZl63jxzQAImccOGa8ghz7i8RgYAkXcL0EYAUvGUYrMlrzWZ90Nsh3Aqgz44wLTjWTh"
+
 TICKER_OURO = "GC=F" 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
 
-def enviar_alerta_telegram(mensagem):
-    # Link estruturado de forma exata de acordo com a API oficial
-    url = f"https://telegram.org{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": mensagem, "parse_mode": "Markdown"}
+def enviar_alerta_discord(mensagem):
+    # Formato simples e robusto exigido pelo Discord
+    payload = {"content": mensagem}
     try: 
-        response = requests.post(url, json=payload, timeout=10)
-        print(f"[Resposta Telegram]: Status {response.status_code}")
+        response = requests.post(URL_DISCORD_WEBHOOK, json=payload, timeout=10)
+        print(f"[Resposta Discord]: Status {response.status_code}")
     except Exception as e: 
-        print(f"[Erro de Conexão]: {e}")
+        print(f"[Erro de Conexão Discord]: {e}")
 
 if os.path.exists(ARQUIVO_MEMORIA):
     with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
@@ -51,14 +51,14 @@ def processar_ciclo_ia():
             memoria_ia["consecutivos_stops"] = 0
             memoria_ia["ordem_ativa"] = None
             salvar_memoria()
-            enviar_alerta_telegram(f"🏆 *ALVO ALCANÇADO NA EXNOVA!*\n\n📈 Profit batido em: US$ {ordem['tp']:,.2f}")
+            enviar_alerta_discord(f"🏆 **ALVO ALCANÇADO NA EXNOVA!**\n\n📈 Profit batido em: US$ {ordem['tp']:,.2f}")
         elif low_atual <= ordem["sl"]:
             memoria_ia["total_stops"] += 1
             memoria_ia["consecutivos_stops"] += 1
             memoria_ia["ordem_ativa"] = None
             memoria_ia["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=2)).isoformat()
             salvar_memoria()
-            enviar_alerta_telegram(f"🚨 *STOP LOSS ACIONADO (IA EM EVOLUÇÃO)*\n\n🛡️ Proteção ativada em: US$ {ordem['sl']:,.2f}")
+            enviar_alerta_discord(f"🚨 **STOP LOSS ACIONADO (IA EM EVOLUÇÃO)**\n\n🛡️ Proteção ativada em: US$ {ordem['sl']:,.2f}")
         return
 
     if "horario_bloqueio_ate" in memoria_ia and memoria_ia["horario_bloqueio_ate"]:
@@ -77,11 +77,11 @@ def processar_ciclo_ia():
         memoria_ia["ordem_ativa"] = {"entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
         
-        enviar_alerta_telegram(f"🔥 *NOVO GATILHO DE COMPRA ENCONTRADO!* 🔥\n\n📥 *ENTRADA:* US$ {preco_atual:,.2f}\n🟢 *PROFIT:* US$ {tp:,.2f}\n🔴 *STOP:* US$ {sl:,.2f}")
+        enviar_alerta_discord(f"🔥 **NOVO GATILHO DE COMPRA ENCONTRADO!** 🔥\n\n📥 **ENTRADA:** US$ {preco_atual:,.2f}\n🟢 **PROFIT:** US$ {tp:,.2f}\n🔴 **STOP:** US$ {sl:,.2f}")
 
 if __name__ == "__main__":
     print("[Iniciando]: Enviando mensagem de teste...")
-    enviar_alerta_telegram("✅ *IA Operacional Iniciada!* Monitorando o Ouro 24/7...")
+    enviar_alerta_discord("✅ **IA Operacional Iniciada!** Monitorando o Ouro 24/7 no Discord...")
     while True:
         try: processar_ciclo_ia()
         except: pass
