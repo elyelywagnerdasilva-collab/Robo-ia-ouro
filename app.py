@@ -222,5 +222,5 @@ if __name__ == "__main__":
     
     while True:
         try:
-            # MECANISMO DE SINAL DE VIDA (Evita que você ache que travou)
-            if datetime.now() - ULTIMO_PING >= timedelta(hours=6):
+            # MECANISMO DE SINAL DE VIDA
+            if (datetime.now() - ULTIMO_PING) >= timedelta(hours=6):
