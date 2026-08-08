@@ -21,7 +21,6 @@ ATIVOS_MONITORADOS = {
 }
 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
-ULTIMO_PING = datetime.now() # Registra o horário que o robô ligou
 
 def enviar_alerta_discord(mensagem):
     print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
@@ -218,9 +217,11 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
 
 if __name__ == "__main__":
     print("[LOG] Iniciando loop do script principal...")
-    enviar_alerta_discord("IA Conectada com sucesso! Monitoramento inteligente com Filtro Macro Diario e Sinal de Vida de 6H ativos.")
+    enviar_alerta_discord("IA Conectada com sucesso! Monitoramento inteligente com Filtro Macro Diario ativo.")
     
     while True:
         try:
-            # MECANISMO DE SINAL DE VIDA
-            if (datetime.now() - ULTIMO_PING) >= timedelta(hours=6):
+            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
+                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
+                time.sleep(5)
+        except Exception as e: 
