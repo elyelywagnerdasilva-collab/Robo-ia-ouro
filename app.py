@@ -21,13 +21,14 @@ ATIVOS_MONITORADOS = {
 }
 
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
+ULTIMO_PING = datetime.now() # Registra o horário que o robô ligou
 
 def enviar_alerta_discord(mensagem):
     print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
     headers = {"Content-Type": "application/json"}
     payload = json.dumps({"content": str(mensagem)})
     try: 
-        response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=12)
+        response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=10)
         print(f"[Resposta Discord]: Status {response.status_code}")
     except Exception as e: 
         print(f"[Erro de Conexão Discord]: {e}")
@@ -62,34 +63,20 @@ def salvar_memoria():
         print(f"[LOG] Erro ao salvar memória: {e}")
 
 def analisar_macro_tendencia(ticker):
-    """ NOVO FILTRO DE ALTA ASSERTIVIDADE: Analisa 4H, 1D e 1W de forma leve """
-    votos_alta = 0
-    votos_baixa = 0
+    """ FILTRO BLINDADO: Analisa a tendência diária de forma leve para evitar bloqueios """
     try:
-        # Baixa os tempos gráficos maiores de forma otimizada
-        df_4h = yf.download(ticker, period="1mo", interval="4h", progress=False)
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
-        df_1w = yf.download(ticker, period="1y", interval="1wk", progress=False)
-        
-        for df in [df_4h, df_1d, df_1w]:
-            if not df.empty:
-                if isinstance(df.columns, pd.MultiIndex): 
-                    df.columns = df.columns.get_level_values(0)
-                
-                # Calcula a média móvel de 20 períodos para cada tempo maior
-                ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
-                preco_fechamento = df['Close'].iloc[-1]
-                
-                if preco_fechamento > ma20:
-                    votos_alta += 1
-                else:
-                    votos_baixa += 1
-                    
-        if votos_alta >= 2:
-            return "ALTA_DOMINANTE"
-        elif votos_baixa >= 2:
-            return "BAIXA_DOMINANTE"
+        if not df_1d.empty:
+            if isinstance(df_1d.columns, pd.MultiIndex): 
+                df_1d.columns = df_1d.columns.get_level_values(0)
             
+            ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
+            ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
+            
+            if ma9_1d > ma21_1d:
+                return "ALTA_DOMINANTE"
+            else:
+                return "BAIXA_DOMINANTE"
     except Exception as e:
         print(f"[LOG] Erro na checagem macro de {ticker}: {e}")
     return "NEUTRO"
@@ -109,7 +96,6 @@ def obter_estado_mercado(df):
         return "INDETERMINADO"
 
 def tomar_decisao_analitica(df, ticker):
-    """ CÉREBRO INTEGRADO PREMIUM: Só opera se o gráfico de 2m estiver alinhado com 4H, 1D e 1W """
     try:
         rsi_atual = df['RSI'].iloc[-1]
         ma200 = df['Close'].rolling(window=100).mean().iloc[-1]
@@ -118,21 +104,15 @@ def tomar_decisao_analitica(df, ticker):
         cruzamento_alta = (df['MA9'].iloc[-3] <= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] > df['MA21'].iloc[-2])
         cruzamento_baixa = (df['MA9'].iloc[-3] >= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] < df['MA21'].iloc[-2])
         
-        # Faz a consulta da direção dos tempos maiores (4H, 1D, 1W)
         macro_tendencia = analisar_macro_tendencia(ticker)
-        print(f"[LOG] {ticker} - Tendência Macro Identificada: {macro_tendencia}")
         
-        # Filtro de Compra: Cruzou para cima em 2m, acima da MA200 e a macro-tendência de longo prazo é de ALTA
         if cruzamento_alta and rsi_atual < 65 and preco_atual > ma200 and macro_tendencia == "ALTA_DOMINANTE":
             return "COMPRA"
-            
-        # Filtro de Venda: Cruzou para baixo em 2m, abaixo da MA200 e a macro-tendência de longo prazo é de BAIXA
         elif cruzamento_baixa and rsi_atual > 35 and preco_atual < ma200 and macro_tendencia == "BAIXA_DOMINANTE":
             return "VENDA"
             
     except Exception as e:
         print(f"[LOG] Erro na tomada de decisão de {ticker}: {e}")
-        
     return "AGUARDAR"
 
 def atualizar_aprendizado(ticker, estado, acao, ganhou):
@@ -214,9 +194,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
         else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
 
-    # Passa o ticker para validar o tempo maior
     decisao_ia = tomar_decisao_analitica(df, ticker)
-    
     score_compra = mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
     score_venda = mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
 
@@ -229,3 +207,20 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         sl = preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
+        enviar_alerta_discord(f"🟢 IA ULTRA-ASSERTIVA: MOMENTO DE COMPRA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO: {tp:,.4f} - Tendência Macro Confirmada!")
+
+    elif decisao_ia == "VENDA" and score_venda >= -0.5:
+        tp = preco_atual * (1 - profit_calc)
+        sl = preco_atual * (1 + stop_calc)
+        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
+        salvar_memoria()
+        enviar_alerta_discord(f"🔴 IA ULTRA-ASSERTIVA: MOMENTO DE VENDA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO: {tp:,.4f} - Tendência Macro Confirmada!")
+
+if __name__ == "__main__":
+    print("[LOG] Iniciando loop do script principal...")
+    enviar_alerta_discord("IA Conectada com sucesso! Monitoramento inteligente com Filtro Macro Diario e Sinal de Vida de 6H ativos.")
+    
+    while True:
+        try:
+            # MECANISMO DE SINAL DE VIDA (Evita que você ache que travou)
+            if datetime.now() - ULTIMO_PING >= timedelta(hours=6):
