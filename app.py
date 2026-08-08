@@ -1,8 +1,6 @@
-print("[LOG] Iniciando carregamento das bibliotecas...")
+print("[LOG] Iniciando loop do script principal...")
 import yfinance as yf
-print("[LOG] yfinance carregado com sucesso.")
 import pandas as pd
-print("[LOG] pandas carregado com sucesso.")
 import numpy as np
 import json
 import time
@@ -11,7 +9,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - LINK DO SEU DISCORD INTEGRADO
+# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
 URL_DISCORD_WEBHOOK = "https://discord.com"
 
@@ -77,7 +75,6 @@ def obter_estado_mercado(df):
         return "INDETERMINADO"
 
 def tomar_decisao_analitica(df):
-    """ CÉREBRO INTELIGENTE LEVE: Analisa tendências cruzadas no mesmo gráfico """
     try:
         rsi_atual = df['RSI'].iloc[-1]
         ma200 = df['Close'].rolling(window=100).mean().iloc[-1]
@@ -107,7 +104,6 @@ def atualizar_aprendizado(ticker, estado, acao, ganhou):
 
 def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     print(f"[LOG] Baixando dados para: {nome_amigavel}...")
-    # Puxa 5 dias apenas em 2m para calcular os indicadores sem estourar o servidor
     df = yf.download(ticker, period="5d", interval="2m", progress=False)
     if df.empty: 
         print(f"[LOG] Dados vazios para {nome_amigavel}")
@@ -133,7 +129,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
 
-    # --- MONITORAMENTO DA OPERAÇÃO ATIVA (TRAILING STOP) ---
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
@@ -178,9 +173,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
         else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
 
-    # --- ANÁLISE E CRUZAMENTO INTELIGENTE ---
     decisao_ia = tomar_decisao_analitica(df)
-    
     score_compra = mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
     score_venda = mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
 
@@ -204,14 +197,13 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
 
 if __name__ == "__main__":
     print("[LOG] Iniciando loop do script principal...")
-    # Força o envio da mensagem inicial no momento exato em que liga
     enviar_alerta_discord("⚙️ **Cérebro de Decisão da IA Ativado!**\n📊 *Ativos:* OURO, BITCOIN e EUR/USD.\n🧠 *Processo:* Monitoramento inteligente e proteção de capital ativos!")
     
     while True:
         try:
             for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
                 processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
-                time.sleep(3) # Pausa leve entre moedas
+                time.sleep(3)
         except Exception as e: 
             print(f"[Erro geral]: {e}")
         time.sleep(60)
