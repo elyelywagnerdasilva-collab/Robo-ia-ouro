@@ -9,9 +9,9 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
+# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO RESETADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1535557343398465658/JseQjCnYHCpMvjdG3mHghWjkSb7LLLAofKtw8Ao18_S0OwczejNSzuEYNL7gEBq63Ysr"
 
 # Lista de Moedas/Ativos Monitorados
 ATIVOS_MONITORADOS = {
@@ -23,12 +23,9 @@ ATIVOS_MONITORADOS = {
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 
 def enviar_alerta_discord(mensagem):
-    print(f"[LOG] Enviando para o Discord: {str(mensagem)[:40]}...")
-    
-    # Cabeçalho explícito para o Discord não rejeitar o pacote de dados
+    print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
     headers = {"Content-Type": "application/json"}
     payload = json.dumps({"content": str(mensagem)})
-    
     try: 
         response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=12)
         print(f"[Resposta Discord]: Status {response.status_code}")
@@ -143,7 +140,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             if preco_atual >= (ordem["entrada"] + (distancia_alvo * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]
                 salvar_memoria()
-                enviar_alerta_discord(f"🛡️ MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
             
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
@@ -153,7 +150,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             if preco_atual <= (ordem["entrada"] - (distancia_alvo * 0.5)) and ordem["sl"] > ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]
                 salvar_memoria()
-                enviar_alerta_discord(f"🛡️ MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
                 
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
@@ -163,14 +160,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             mem_ativo["consecutivos_stops"] = 0
             mem_ativo["ordem_ativa"] = None
             atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=True)
-            enviar_alerta_discord(f"🏆 OPERAÇÃO VITORIOSA! ({nome_amigavel}) - Direção: {tipo} - Lucro no preço: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"OPERAÇÃO VITORIOSA! ({nome_amigavel}) - Direção: {tipo} - Lucro no preço: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1
             mem_ativo["consecutivos_stops"] += 1
             mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat()
             atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=False)
-            enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Proteção ativada no preço: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Proteção ativada no preço: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
@@ -190,14 +187,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         sl = preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
-        enviar_alerta_discord(f"🟢 IA DECIDIU: MOMENTO DE COMPRA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
+        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE COMPRA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
 
     elif decisao_ia == "VENDA" and score_venda >= -0.5:
         tp = preco_atual * (1 - profit_calc)
         sl = preco_atual * (1 + stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
-        enviar_alerta_discord(f"🔴 IA DECIDIU: MOMENTO DE VENDA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
+        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE VENDA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
 
 if __name__ == "__main__":
     print("[LOG] Iniciando loop do script principal...")
