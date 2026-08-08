@@ -1,5 +1,8 @@
+print("[LOG] Iniciando carregamento das bibliotecas...")
 import yfinance as yf
+print("[LOG] yfinance carregado com sucesso.")
 import pandas as pd
+print("[LOG] pandas carregado com sucesso.")
 import numpy as np
 import json
 import time
@@ -12,36 +15,72 @@ from datetime import datetime, timedelta
 # ================================================================
 URL_DISCORD_WEBHOOK = "https://discord.com"
 
-TICKER_OURO = "GC=F" 
-ARQUIVO_MEMORIA = "memoria_ia_evolutiva.json"
+# Lista de Moedas/Ativos Monitorados
+ATIVOS_MONITORADOS = {
+    "GC=F": "OURO",
+    "BTC-USD": "BITCOIN",
+    "EURUSD=X": "EUR/USD"
+}
+
+ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 
 def enviar_alerta_discord(mensagem):
+    print(f"[LOG] Enviando para o Discord: {mensagem[:40]}...")
     payload = {"content": mensagem}
     try: 
-        response = requests.post(URL_DISCORD_WEBHOOK, json=payload, timeout=10)
+        response = requests.post(URL_DISCORD_WEBHOOK, json=payload, timeout=15)
         print(f"[Resposta Discord]: Status {response.status_code}")
     except Exception as e: 
         print(f"[Erro de Conexão Discord]: {e}")
 
-# Inicialização da Memória da IA Avançada
+# Inicialização da Memória Estruturada
+print("[LOG] Configurando banco de memória da IA...")
 if os.path.exists(ARQUIVO_MEMORIA):
     with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
 else:
-    memoria_ia = {
-        "total_profits": 0,
-        "total_stops": 0,
-        "consecutivos_stops": 0,
-        "ajuste_stop_base": 0.0020,   # Stop inicial mais apertado (Proteção)
-        "ajuste_profit_base": 0.0040, # Alvo inicial matemático
-        "ordem_ativa": None,
-        "q_table": {}                 # Tabela de aprendizado real por estados do mercado
-    }
+    memoria_ia = {}
+
+for ticker, nome in ATIVOS_MONITORADOS.items():
+    if ticker not in memoria_ia:
+        memoria_ia[ticker] = {
+            "total_profits": 0,
+            "total_stops": 0,
+            "consecutivos_stops": 0,
+            "ajuste_stop_base": 0.0020,
+            "ajuste_profit_base": 0.0040,
+            "ordem_ativa": None,
+            "horario_bloqueio_ate": None,
+            "q_table": {}
+        }
 
 def salvar_memoria():
     with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
 
+def analisar_macro_tendencia(ticker):
+    """ Analisa 4H, 1 Semana e 1 Mês para dar peso à decisão final """
+    score_direcao = 0
+    try:
+        df_4h = yf.download(ticker, period="1mo", interval="4h", progress=False)
+        df_1w = yf.download(ticker, period="6mo", interval="1wk", progress=False)
+        df_1m = yf.download(ticker, period="2y", interval="1mo", progress=False)
+        
+        for df in [df_4h, df_1w, df_1m]:
+            if not df.empty and isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+        
+        # Analisa a posição do preço contra a média em cada tempo gráfico
+        if not df_4h.empty:
+            score_direcao += 1 if df_4h['Close'].iloc[-1] > df_4h['Close'].rolling(20).mean().iloc[-1] else -1
+        if not df_1w.empty:
+            score_direcao += 1 if df_1w['Close'].iloc[-1] > df_1w['Close'].rolling(20).mean().iloc[-1] else -1
+        if not df_1m.empty:
+            score_direcao += 1 if df_1m['Close'].iloc[-1] > df_1m['Close'].rolling(12).mean().iloc[-1] else -1
+            
+    except Exception as e:
+        print(f"[LOG] Falha ao analisar macro para {ticker}: {e}")
+    return score_direcao
+
 def obter_estado_mercado(df):
-    """ Define o estado do mercado em string para a tabela de aprendizado da IA """
     try:
         rsi = float(df['RSI'].iloc[-1])
         tendencia = "ALTA" if df['MA9'].iloc[-1] > df['MA21'].iloc[-1] else "BAIXA"
@@ -55,32 +94,42 @@ def obter_estado_mercado(df):
     except:
         return "INDETERMINADO"
 
-def atualizar_aprendizado(estado, acao, ganhou):
-    """ Camada rigorosa de Aprendizado por Reforço (Q-Learning) """
-    if estado == "INDETERMINADO": return
-    if "q_table" not in memoria_ia: memoria_ia["q_table"] = {}
-    if estado not in memoria_ia["q_table"]:
-        memoria_ia["q_table"][estado] = {"COMPRA": 0.0, "VENDA": 0.0}
-        
-    recompensa = 1.0 if ganhou else -1.5 # Punição maior para o Stop Loss para forçar rigor absoluto
-    lr = 0.2  # Taxa de aprendizado
+def tomar_decisao_analitica(df, ticker):
+    """ CÉREBRO INTEGRADO: Toma a decisão matemática se o momento é de Compra, Venda ou Aguardar """
+    votos_macro = analisar_macro_tendencia(ticker)
+    rsi_atual = df['RSI'].iloc[-1]
+    cruzamento_alta = (df['MA9'].iloc[-3] <= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] > df['MA21'].iloc[-2])
+    cruzamento_baixa = (df['MA9'].iloc[-3] >= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] < df['MA21'].iloc[-2])
     
-    # Atualiza o peso da decisão na memória de longo prazo
-    memoria_ia["q_table"][estado][acao] += lr * (recompensa - memoria_ia["q_table"][estado][acao])
+    if cruzamento_alta and rsi_atual < 65 and votos_macro >= 0:
+        return "COMPRA"
+    elif cruzamento_baixa and rsi_atual > 35 and votos_macro <= 0:
+        return "VENDA"
+        
+    return "AGUARDAR"
+
+def atualizar_aprendizado(ticker, estado, acao, ganhou):
+    if estado == "INDETERMINADO": return
+    if estado not in memoria_ia[ticker]["q_table"]:
+        memoria_ia[ticker]["q_table"][estado] = {"COMPRA": 0.0, "VENDA": 0.0}
+        
+    recompensa = 1.0 if ganhou else -1.5
+    lr = 0.2
+    memoria_ia[ticker]["q_table"][estado][acao] += lr * (recompensa - memoria_ia[ticker]["q_table"][estado][acao])
     salvar_memoria()
 
-def processar_ciclo_ia():
-    df = yf.download(TICKER_OURO, period="3d", interval="2m", progress=False)
+def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
+    print(f"[LOG] Analisando mercado para: {nome_amigavel} ({ticker})...")
+    df = yf.download(ticker, period="3d", interval="2m", progress=False)
     if df.empty: return
+        
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     df.columns = df.columns.str.strip()
     df.ffill(inplace=True)
     
-    # --- CAMADA DE INDICADORES TÉCNICOS ---
     df['MA9'] = df['Close'].rolling(window=9).mean()
     df['MA21'] = df['Close'].rolling(window=21).mean()
     
-    # Cálculo do RSI para evitar falsos rompimentos
     delta = df['Close'].diff()
     ganho = delta.where(delta > 0, 0).rolling(window=14).mean()
     perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -92,74 +141,72 @@ def processar_ciclo_ia():
     low_atual = float(df['Low'].iloc[-1])
     
     estado_atual = obter_estado_mercado(df)
+    mem_ativo = memoria_ia[ticker]
 
-    # --- CAMADA DE MONITORAMENTO DE ORDEM ATIVA ---
-    if memoria_ia["ordem_ativa"] is not None:
-        ordem = memoria_ia["ordem_ativa"]
+    # --- MONITORAMENTO DA OPERAÇÃO ATIVA ---
+    if mem_ativo["ordem_ativa"] is not None:
+        ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
-        
-        ganhou = False
-        perdeu = False
+        ganhou, perdeu = False, False
         
         if tipo == "COMPRA":
+            distancia_alvo = ordem["tp"] - ordem["entrada"]
+            if preco_atual >= (ordem["entrada"] + (distancia_alvo * 0.5)) and ordem["sl"] < ordem["entrada"]:
+                ordem["sl"] = ordem["entrada"]
+                salvar_memoria()
+                enviar_alerta_discord(f"🛡️ **MECANISMO DE DEFESA ({nome_amigavel})**\nOperação avançou 50%! Stop Loss movido para o preço de Entrada (US$ {ordem['sl']:,.4f}) para garantir risco zero.")
+            
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
+            
         elif tipo == "VENDA":
+            distancia_alvo = ordem["entrada"] - ordem["tp"]
+            if preco_atual <= (ordem["entrada"] - (distancia_alvo * 0.5)) and ordem["sl"] > ordem["entrada"]:
+                ordem["sl"] = ordem["entrada"]
+                salvar_memoria()
+                enviar_alerta_discord(f"🛡️ **MECANISMO DE DEFESA ({nome_amigavel})**\nOperação avançou 50%! Stop Loss movido para o preço de Entrada (US$ {ordem['sl']:,.4f}) para garantir risco zero.")
+                
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
-            memoria_ia["total_profits"] += 1
-            memoria_ia["consecutivos_stops"] = 0
-            memoria_ia["ordem_ativa"] = None
-            atualizar_aprendizado(ordem["estado"], tipo, ganhou=True)
-            enviar_alerta_discord(f"🏆 **ALVO ALCANÇADO NA EXNOVA!**\n\n📈 Direção: *{tipo}*\n🟢 Profit batido em: US$ {ordem['tp']:,.2f}")
+            mem_ativo["total_profits"] += 1
+            mem_ativo["consecutivos_stops"] = 0
+            mem_ativo["ordem_ativa"] = None
+            atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=True)
+            enviar_alerta_discord(f"🏆 **OPERAÇÃO VITORIOSA! ({nome_amigavel})**\n\n📈 Direção: *{tipo}*\n🟢 Lucro garantido no preço: {preco_atual:,.4f}")
         elif perdeu:
-            memoria_ia["total_stops"] += 1
-            memoria_ia["consecutivos_stops"] += 1
-            memoria_ia["ordem_ativa"] = None
-            memoria_ia["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat()
-            atualizar_aprendizado(ordem["estado"], tipo, ganhou=False)
-            enviar_alerta_discord(f"🚨 **STOP LOSS ACIONADO (IA EM EVOLUÇÃO)**\n\n🛡️ Proteção ativada em: US$ {ordem['sl']:,.2f}")
+            mem_ativo["total_stops"] += 1
+            mem_ativo["consecutivos_stops"] += 1
+            mem_ativo["ordem_ativa"] = None
+            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat()
+            atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=False)
+            enviar_alerta_discord(f"🚨 **STOP LOSS ACIONADO ({nome_amigavel})**\n\n🛡️ Ordem encerrada para proteção em: {preco_atual: :,.4f}")
         return
 
-    if "horario_bloqueio_ate" in memoria_ia and memoria_ia["horario_bloqueio_ate"]:
-        if datetime.now() < datetime.fromisoformat(memoria_ia["horario_bloqueio_ate"]): return
-        else: memoria_ia["horario_bloqueio_ate"] = None; salvar_memoria()
+    if mem_ativo.get("horario_bloqueio_ate"):
+        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
+        else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
 
-    # --- CAMADA DE GATILHOS (COMPRA E VENDA) ---
-    gatilho_compra = (df['MA9'].iloc[-3] <= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] > df['MA21'].iloc[-2])
-    gatilho_venda = (df['MA9'].iloc[-3] >= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] < df['MA21'].iloc[-2])
+    # --- PROCESSO DE TOMADA DE DECISÃO INTELIGENTE ---
+    decisao_ia = tomar_decisao_analitica(df, ticker)
     
-    # Filtro de assertividade da memória Inteligente (Se o estado costuma dar stop, bloqueia a operação)
-    score_compra = memoria_ia["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
-    score_venda = memoria_ia["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
+    score_compra = mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
+    score_venda = mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
 
-    # Configuração dinâmica de limites baseada em erros recentes
-    stops_recentes = memoria_ia["consecutivos_stops"]
-    stop_calc = memoria_ia["ajuste_stop_base"] + (0.0003 * stops_recentes) if stops_recentes > 0 else memoria_ia["ajuste_stop_base"]
-    profit_calc = memoria_ia["ajuste_profit_base"] - (0.0002 * stops_recentes) if stops_recentes > 0 else memoria_ia["ajuste_profit_base"]
+    stops_recentes = mem_ativo["consecutivos_stops"]
+    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0003 * stops_recentes) if stops_recentes > 0 else mem_ativo["ajuste_stop_base"]
+    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0002 * stops_recentes) if stops_recentes > 0 else mem_ativo["ajuste_profit_base"]
 
-    # Execução Rigorosa de Compra (Só entra se o RSI permitir e se o aprendizado não estiver negativo para esse estado)
-    if gatilho_compra and df['RSI'].iloc[-1] < 68 and score_compra >= -0.5:
+    if decisao_ia == "COMPRA" and score_compra >= -0.5:
         tp = preco_atual * (1 + profit_calc)
         sl = preco_atual * (1 - stop_calc)
-        memoria_ia["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
+        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
-        enviar_alerta_discord(f"🟢 **NOVO GATILHO DE COMPRA ENCONTRADO!** 🟢\n\n📥 **ENTRADA:** US$ {preco_atual:,.2f}\n🎯 **PROFIT (ALVO):** US$ {tp:,.2f}\n🛑 **STOP LOSS:** US$ {sl:,.2f}\n🧠 *Estado de Análise:* `{estado_atual}`")
+        enviar_alerta_discord(f"🟢 **IA DECIDIU: MOMENTO DE COMPRA EM {nome_amigavel}** 🟢\n\n📥 **PREÇO DE ENTRADA:** {preco_atual:,.4f}\n🎯 **ALVO (TAKE PROFIT):** {tp:,.4f}\n🛑 **STOP LOSS INICIAL:** {sl:,.4f}\n🧠 *Estado do Mercado:* `{estado_atual}`")
 
-    # Execução Rigorosa de Venda (Operação Inversa)
-    elif gatilho_venda and df['RSI'].iloc[-1] > 32 and score_venda >= -0.5:
+    elif decisao_ia == "VENDA" and score_venda >= -0.5:
         tp = preco_atual * (1 - profit_calc)
         sl = preco_atual * (1 + stop_calc)
-        memoria_ia["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
+        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
-        enviar_alerta_discord(f"🔴 **NOVO GATILHO DE VENDA ENCONTRADO!** 🔴\n\n📥 **ENTRADA:** US$ {preco_atual:,.2f}\n🎯 **PROFIT (ALVO):** US$ {tp:,.2f}\n🛑 **STOP LOSS:** US$ {sl:,.2f}\n🧠 *Estado de Análise:* `{estado_atual}`")
-
-if __name__ == "__main__":
-    print("[Iniciando]: Sistema de IA com Aprendizado por Reforço...")
-    enviar_alerta_discord("⚙️ **IA Operacional Reiniciada com Sucesso!**\n📊 *Mapeamento ativado:* Compras, Vendas e Camada Rigorosa de Aprendizado Automático (Q-Learning).")
-    while True:
-        try: processar_ciclo_ia()
-        except Exception as e: print(f"[Erro no processamento]: {e}")
-        time.sleep(60)
