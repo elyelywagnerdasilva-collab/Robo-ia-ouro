@@ -9,9 +9,9 @@ import requests
 from datetime import datetime, timedelta
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO RESETADO
+# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK ATIVO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1535557343398465658/JseQjCnYHCpMvjdG3mHghWjkSb7LLLAofKtw8Ao18_S0OwczejNSzuEYNL7gEBq63Ysr"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
 # Lista de Moedas/Ativos Monitorados
 ATIVOS_MONITORADOS = {
@@ -61,6 +61,39 @@ def salvar_memoria():
     except Exception as e:
         print(f"[LOG] Erro ao salvar memória: {e}")
 
+def analisar_macro_tendencia(ticker):
+    """ NOVO FILTRO DE ALTA ASSERTIVIDADE: Analisa 4H, 1D e 1W de forma leve """
+    votos_alta = 0
+    votos_baixa = 0
+    try:
+        # Baixa os tempos gráficos maiores de forma otimizada
+        df_4h = yf.download(ticker, period="1mo", interval="4h", progress=False)
+        df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        df_1w = yf.download(ticker, period="1y", interval="1wk", progress=False)
+        
+        for df in [df_4h, df_1d, df_1w]:
+            if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex): 
+                    df.columns = df.columns.get_level_values(0)
+                
+                # Calcula a média móvel de 20 períodos para cada tempo maior
+                ma20 = df['Close'].rolling(window=20).mean().iloc[-1]
+                preco_fechamento = df['Close'].iloc[-1]
+                
+                if preco_fechamento > ma20:
+                    votos_alta += 1
+                else:
+                    votos_baixa += 1
+                    
+        if votos_alta >= 2:
+            return "ALTA_DOMINANTE"
+        elif votos_baixa >= 2:
+            return "BAIXA_DOMINANTE"
+            
+    except Exception as e:
+        print(f"[LOG] Erro na checagem macro de {ticker}: {e}")
+    return "NEUTRO"
+
 def obter_estado_mercado(df):
     try:
         rsi = float(df['RSI'].iloc[-1])
@@ -75,7 +108,8 @@ def obter_estado_mercado(df):
     except:
         return "INDETERMINADO"
 
-def tomar_decisao_analitica(df):
+def tomar_decisao_analitica(df, ticker):
+    """ CÉREBRO INTEGRADO PREMIUM: Só opera se o gráfico de 2m estiver alinhado com 4H, 1D e 1W """
     try:
         rsi_atual = df['RSI'].iloc[-1]
         ma200 = df['Close'].rolling(window=100).mean().iloc[-1]
@@ -84,12 +118,20 @@ def tomar_decisao_analitica(df):
         cruzamento_alta = (df['MA9'].iloc[-3] <= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] > df['MA21'].iloc[-2])
         cruzamento_baixa = (df['MA9'].iloc[-3] >= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] < df['MA21'].iloc[-2])
         
-        if cruzamento_alta and rsi_atual < 65 and preco_atual > ma200:
+        # Faz a consulta da direção dos tempos maiores (4H, 1D, 1W)
+        macro_tendencia = analisar_macro_tendencia(ticker)
+        print(f"[LOG] {ticker} - Tendência Macro Identificada: {macro_tendencia}")
+        
+        # Filtro de Compra: Cruzou para cima em 2m, acima da MA200 e a macro-tendência de longo prazo é de ALTA
+        if cruzamento_alta and rsi_atual < 65 and preco_atual > ma200 and macro_tendencia == "ALTA_DOMINANTE":
             return "COMPRA"
-        elif cruzamento_baixa and rsi_atual > 35 and preco_atual < ma200:
+            
+        # Filtro de Venda: Cruzou para baixo em 2m, abaixo da MA200 e a macro-tendência de longo prazo é de BAIXA
+        elif cruzamento_baixa and rsi_atual > 35 and preco_atual < ma200 and macro_tendencia == "BAIXA_DOMINANTE":
             return "VENDA"
+            
     except Exception as e:
-        print(f"[LOG] Erro na tomada de decisão: {e}")
+        print(f"[LOG] Erro na tomada de decisão de {ticker}: {e}")
         
     return "AGUARDAR"
 
@@ -106,9 +148,7 @@ def atualizar_aprendizado(ticker, estado, acao, ganhou):
 def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     print(f"[LOG] Baixando dados para: {nome_amigavel}...")
     df = yf.download(ticker, period="5d", interval="2m", progress=False)
-    if df.empty: 
-        print(f"[LOG] Dados vazios para {nome_amigavel}")
-        return
+    if df.empty: return
         
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     df.columns = df.columns.str.strip()
@@ -140,7 +180,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             if preco_atual >= (ordem["entrada"] + (distancia_alvo * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]
                 salvar_memoria()
-                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"🛡️ MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
             
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
@@ -150,7 +190,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             if preco_atual <= (ordem["entrada"] - (distancia_alvo * 0.5)) and ordem["sl"] > ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]
                 salvar_memoria()
-                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"🛡️ MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
                 
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
@@ -160,21 +200,23 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             mem_ativo["consecutivos_stops"] = 0
             mem_ativo["ordem_ativa"] = None
             atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=True)
-            enviar_alerta_discord(f"OPERAÇÃO VITORIOSA! ({nome_amigavel}) - Direção: {tipo} - Lucro no preço: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"🏆 OPERAÇÃO VITORIOSA! ({nome_amigavel}) - Direção: {tipo} - Lucro no preço: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1
             mem_ativo["consecutivos_stops"] += 1
             mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat()
             atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=False)
-            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Proteção ativada no preço: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Proteção ativada no preço: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
         if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
         else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
 
-    decisao_ia = tomar_decisao_analitica(df)
+    # Passa o ticker para validar o tempo maior
+    decisao_ia = tomar_decisao_analitica(df, ticker)
+    
     score_compra = mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
     score_venda = mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
 
@@ -187,24 +229,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         sl = preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
         salvar_memoria()
-        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE COMPRA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
-
-    elif decisao_ia == "VENDA" and score_venda >= -0.5:
-        tp = preco_atual * (1 - profit_calc)
-        sl = preco_atual * (1 + stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
-        salvar_memoria()
-        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE VENDA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
-
-if __name__ == "__main__":
-    print("[LOG] Iniciando loop do script principal...")
-    enviar_alerta_discord("IA Conectada com sucesso! Monitoramento inteligente e proteção de capital ativos para OURO, BITCOIN e EUR/USD.")
-    
-    while True:
-        try:
-            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
-                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
-                time.sleep(3)
-        except Exception as e: 
-            print(f"[Erro geral]: {e}")
-        time.sleep(60)
