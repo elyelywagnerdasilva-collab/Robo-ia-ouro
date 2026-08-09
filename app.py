@@ -1,4 +1,4 @@
-print("[LOG] Iniciando loop do script principal...")
+print("[LOG] Iniciando carregamento das bibliotecas de IA...")
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -7,32 +7,30 @@ import time
 import os
 import requests
 from datetime import datetime, timedelta
+from sklearn.linear_model import SGDRegressor
+from sklearn.preprocessing import StandardScaler
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO RESETADO
+# CONFIGURAÇÃO VITORIOSA - SEU WEBHOOK INTEGRADO DO PRINT
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1535557343398465658/JseQjCnYHCpMvjdG3mHghWjkSb7LLLAofKtw8Ao18_S0OwczejNSzuEYNL7gEBq63Ysr"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
-# Lista de Moedas/Ativos Monitorados
-ATIVOS_MONITORADOS = {
-    "GC=F": "OURO",
-    "BTC-USD": "BITCOIN",
-    "EURUSD=X": "EUR/USD"
-}
-
+ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
+
+MODELOS_NEURAIS = {}
+ESCALONADORES = {}
 
 def enviar_alerta_discord(mensagem):
     print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
     headers = {"Content-Type": "application/json"}
     payload = json.dumps({"content": str(mensagem)})
-    try: 
-        response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=12)
+    try:
+        response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=10)
         print(f"[Resposta Discord]: Status {response.status_code}")
-    except Exception as e: 
+    except Exception as e:
         print(f"[Erro de Conexão Discord]: {e}")
 
-# Inicialização Segura da Memória
 print("[LOG] Configurando banco de memória da IA...")
 if os.path.exists(ARQUIVO_MEMORIA):
     try:
@@ -45,166 +43,132 @@ else:
 for ticker, nome in ATIVOS_MONITORADOS.items():
     if ticker not in memoria_ia:
         memoria_ia[ticker] = {
-            "total_profits": 0,
-            "total_stops": 0,
-            "consecutivos_stops": 0,
-            "ajuste_stop_base": 0.0020,
-            "ajuste_profit_base": 0.0040,
-            "ordem_ativa": None,
-            "horario_bloqueio_ate": None,
-            "q_table": {}
+            "total_profits": 0, "total_stops": 0, "consecutivos_stops": 0,
+            "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
+            "ordem_ativa": None, "horario_bloqueio_ate": None, "q_table": {}
         }
+    MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=1000, tol=1e-3, learning_rate='adaptive', eta0=0.01)
+    ESCALONADORES[ticker] = StandardScaler()
 
 def salvar_memoria():
     try:
         with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
     except Exception as e:
-        print(f"[LOG] Erro ao salvar memória: {e}")
+        print(f"[Erro Memoria]: {e}")
+
+def obter_dados_preparados(ticker):
+    try:
+        df = yf.download(ticker, period="5d", interval="2m", progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        df.columns = df.columns.str.strip()
+        df.ffill(inplace=True)
+        
+        df['MA9'] = df['Close'].rolling(window=9).mean()
+        df['MA21'] = df['Close'].rolling(window=21).mean()
+        df['MA100'] = df['Close'].rolling(window=100).mean()
+        
+        delta = df['Close'].diff()
+        ganho = delta.where(delta > 0, 0).rolling(window=14).mean()
+        perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        df['RSI'] = 100 - (100 / (1 + (ganho / (perda + 1e-9))))
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"[Erro Preparacao {ticker}]: {e}")
+        return None
+
+def treinar_e_prever_rede_neural(df, ticker):
+    try:
+        features = df[['Close', 'MA9', 'MA21', 'MA100', 'RSI']].values
+        alvo = df['Close'].shift(-1).ffill().values
+        
+        X_scaled = ESCALONADORES[ticker].fit_transform(features)
+        MODELOS_NEURAIS[ticker].partial_fit(X_scaled, alvo)
+        
+        ultima_linha_features = features[-1].reshape(1, -1)
+        ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
+        
+        previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
+        preco_atual = df['Close'].iloc[-1]
+        
+        if previsao_preco > (preco_atual * 1.0005): return "COMPRA"
+        elif previsao_preco < (preco_atual * 0.9995): return "VENDA"
+    except Exception as e:
+        print(f"[Erro Rede Neural {ticker}]: {e}")
+    return "AGUARDAR"
 
 def obter_estado_mercado(df):
     try:
         rsi = float(df['RSI'].iloc[-1])
         tendencia = "ALTA" if df['MA9'].iloc[-1] > df['MA21'].iloc[-1] else "BAIXA"
         volatilidade = "ALTA" if df['Close'].std() > df['Close'].rolling(20).std().iloc[-1] else "BAIXA"
-        
-        if rsi > 70: situacao_rsi = "SOBRECOMPRADO"
-        elif rsi < 30: situacao_rsi = "SOBREVENDIDO"
-        else: situacao_rsi = "NEUTRO"
-        
+        situacao_rsi = "SOBRECOMPRADO" if rsi > 70 else ("SOBREVENDIDO" if rsi < 30 else "NEUTRO")
         return f"{tendencia}_{situacao_rsi}_{volatilidade}"
     except:
         return "INDETERMINADO"
 
-def tomar_decisao_analitica(df):
-    try:
-        rsi_atual = df['RSI'].iloc[-1]
-        ma200 = df['Close'].rolling(window=100).mean().iloc[-1]
-        preco_atual = df['Close'].iloc[-1]
-        
-        cruzamento_alta = (df['MA9'].iloc[-3] <= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] > df['MA21'].iloc[-2])
-        cruzamento_baixa = (df['MA9'].iloc[-3] >= df['MA21'].iloc[-3]) and (df['MA9'].iloc[-2] < df['MA21'].iloc[-2])
-        
-        if cruzamento_alta and rsi_atual < 65 and preco_atual > ma200:
-            return "COMPRA"
-        elif cruzamento_baixa and rsi_atual > 35 and preco_atual < ma200:
-            return "VENDA"
-    except Exception as e:
-        print(f"[LOG] Erro na tomada de decisão: {e}")
-        
-    return "AGUARDAR"
-
-def atualizar_aprendizado(ticker, estado, acao, ganhou):
-    if estado == "INDETERMINADO": return
-    if estado not in memoria_ia[ticker]["q_table"]:
-        memoria_ia[ticker]["q_table"][estado] = {"COMPRA": 0.0, "VENDA": 0.0}
-        
-    recompensa = 1.0 if ganhou else -1.5
-    lr = 0.2
-    memoria_ia[ticker]["q_table"][estado][acao] += lr * (recompensa - memoria_ia[ticker]["q_table"][estado][acao])
-    salvar_memoria()
-
 def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
-    print(f"[LOG] Baixando dados para: {nome_amigavel}...")
-    df = yf.download(ticker, period="5d", interval="2m", progress=False)
-    if df.empty: 
-        print(f"[LOG] Dados vazios para {nome_amigavel}")
-        return
-        
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df.columns = df.columns.str.strip()
-    df.ffill(inplace=True)
+    print(f"[LOG] Hércules Neural analisando: {nome_amigavel}...")
+    df = obter_dados_preparados(ticker)
+    if df is None or len(df) < 100: return
     
-    df['MA9'] = df['Close'].rolling(window=9).mean()
-    df['MA21'] = df['Close'].rolling(window=21).mean()
-    
-    delta = df['Close'].diff()
-    ganho = delta.where(delta > 0, 0).rolling(window=14).mean()
-    perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = ganho / (perda + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    preco_atual = float(df['Close'].iloc[-1])
-    high_atual = float(df['High'].iloc[-1])
-    low_atual = float(df['Low'].iloc[-1])
-    
+    preco_atual, high_atual, low_atual = float(df['Close'].iloc[-1]), float(df['High'].iloc[-1]), float(df['Low'].iloc[-1])
     estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
-
+    
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
         ganhou, perdeu = False, False
-        
         if tipo == "COMPRA":
-            distancia_alvo = ordem["tp"] - ordem["entrada"]
-            if preco_atual >= (ordem["entrada"] + (distancia_alvo * 0.5)) and ordem["sl"] < ordem["entrada"]:
-                ordem["sl"] = ordem["entrada"]
-                salvar_memoria()
-                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
-            
+            if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
+                ordem["sl"] = ordem["entrada"]; salvar_memoria()
+                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
-            
         elif tipo == "VENDA":
-            distancia_alvo = ordem["entrada"] - ordem["tp"]
-            if preco_atual <= (ordem["entrada"] - (distancia_alvo * 0.5)) and ordem["sl"] > ordem["entrada"]:
-                ordem["sl"] = ordem["entrada"]
-                salvar_memoria()
-                enviar_alerta_discord(f"MECANISMO DE DEFESA ({nome_amigavel}) - Operação andou 50%! Stop ajustado para a entrada: {ordem['sl']:,.4f}")
-                
+            if preco_atual <= (ordem["entrada"] - ((ordem["entrada"] - ordem["tp"]) * 0.5)) and ordem["sl"] > ordem["entrada"]:
+                ordem["sl"] = ordem["entrada"]; salvar_memoria()
+                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
-            mem_ativo["total_profits"] += 1
-            mem_ativo["consecutivos_stops"] = 0
-            mem_ativo["ordem_ativa"] = None
-            atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=True)
-            enviar_alerta_discord(f"OPERAÇÃO VITORIOSA! ({nome_amigavel}) - Direção: {tipo} - Lucro no preço: {preco_atual:,.4f}")
+            mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
+            enviar_alerta_discord(f"🏆 REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preço: {preco_atual:,.4f}")
         elif perdeu:
-            mem_ativo["total_stops"] += 1
-            mem_ativo["consecutivos_stops"] += 1
-            mem_ativo["ordem_ativa"] = None
-            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat()
-            atualizar_aprendizado(ticker, ordem["estado"], tipo, ganhou=False)
-            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Proteção ativada no preço: {preco_atual:,.4f}")
+            mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
+            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat(); salvar_memoria()
+            enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando neuronios: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
         if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
         else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
-
-    decisao_ia = tomar_decisao_analitica(df)
-    score_compra = mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0)
-    score_venda = mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0)
-
-    stops_recentes = mem_ativo["consecutivos_stops"]
-    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0003 * stops_recentes) if stops_recentes > 0 else mem_ativo["ajuste_stop_base"]
-    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0002 * stops_recentes) if stops_recentes > 0 else mem_ativo["ajuste_profit_base"]
-
-    if decisao_ia == "COMPRA" and score_compra >= -0.5:
-        tp = preco_atual * (1 + profit_calc)
-        sl = preco_atual * (1 - stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
-        salvar_memoria()
-        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE COMPRA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
-
-    elif decisao_ia == "VENDA" and score_venda >= -0.5:
-        tp = preco_atual * (1 - profit_calc)
-        sl = preco_atual * (1 + stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}
-        salvar_memoria()
-        enviar_alerta_discord(f"IA DECIDIU: MOMENTO DE VENDA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO (TP): {tp:,.4f} - STOP: {sl:,.4f}")
+        
+    decisao_neural = treinar_e_prever_rede_neural(df, ticker)
+    stops = mem_ativo["consecutivos_stops"]
+    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
+    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0002 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
+    
+    if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -0.5:
+        tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
+        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
+        enviar_alerta_discord(f"🟢 **HÉRCULES NEURAL - COMPRA ENCONTRADA ({nome_amigavel})** 🟢\n📥 **ENTRADA:** {preco_atual:,.4f}\n🎯 **ALVO (TP):** {tp:,.4f}\n🧠 *Analise:* Decisao por Redes Neurais.")
+    elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
+        tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
+        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
+        enviar_alerta_discord(f"🔴 **HÉRCULES NEURAL - VENDA ENCONTRADA ({nome_amigavel})** 🔴\n📥 **ENTRADA:** {preco_atual:,.4f}\n🎯 **ALVO (TP):** {tp:,.4f}\n🧠 *Analise:* Decisao por Redes Neurais.")
 
 if __name__ == "__main__":
-    print("[LOG] Iniciando loop do script principal...")
-    enviar_alerta_discord("IA Conectada com sucesso! Monitoramento inteligente e proteção de capital ativos para OURO, BITCOIN e EUR/USD.")
-    
+    print("[LOG] Iniciando loop do Hércules com Redes Neurais...")
+    enviar_alerta_discord("⚡ **Hércules Inteligência Artificial Conectada!**\n🧠 *Upgrade Neural:* Redes neurais ativas e aprendendo padrões de mercado de forma independente para OURO, BITCOIN e EUR/USD!")
     while True:
         try:
             for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
                 processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
-                time.sleep(3)
-        except Exception as e: 
-            print(f"[Erro geral]: {e}")
+                time.sleep(5)
+        except Exception as e:
+            print(f"[Erro]: {e}")
         time.sleep(60)
