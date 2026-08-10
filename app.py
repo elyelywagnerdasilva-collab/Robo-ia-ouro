@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1536174367514562703/mtm7cOx7Adm4FqV-_Vp5Xr2NG_Cepn0Mk3fUhzh_09fyrYYLdduQ4VoFQGz_wSel67fd"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -47,7 +47,7 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
             "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
             "ordem_ativa": None, "horario_bloqueio_ate": None, "q_table": {}
         }
-    MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=1000, tol=1e-3, learning_rate='adaptive', eta0=0.01)
+    MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
 
 def salvar_memoria():
@@ -55,6 +55,19 @@ def salvar_memoria():
         with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
     except Exception as e:
         print(f"[Erro Memoria]: {e}")
+
+def analisar_macro_tendencia(ticker):
+    """ TRAVA DE SEGURANÇA INSTITUCIONAL: Baixa o grafico de 1 Dia para barrar erros da Rede Neural """
+    try:
+        df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        if not df_1d.empty:
+            if isinstance(df_1d.columns, pd.MultiIndex): df_1d.columns = df_1d.columns.get_level_values(0)
+            ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
+            ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
+            return "ALTA" if ma9_1d > ma21_1d else "BAIXA"
+    except Exception as e:
+        print(f"[Erro Macro {ticker}]: {e}")
+    return "NEUTRO"
 
 def obter_dados_preparados(ticker):
     try:
@@ -92,8 +105,13 @@ def treinar_e_prever_rede_neural(df, ticker):
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
-        if previsao_preco > (preco_atual * 1.0005): return "COMPRA"
-        elif previsao_preco < (preco_atual * 0.9995): return "VENDA"
+        # Puxa a tendencia do grafico maior de 1 Dia antes de validar
+        macro = analisar_macro_tendencia(ticker)
+        
+        # Filtro Rigoroso: So aceita prever Compra se o grafico Diario for de Alta
+        if previsao_preco > (preco_atual * 1.0008) and macro == "ALTA": return "COMPRA"
+        # So aceita prever Venda se o grafico Diario for de Baixa
+        elif previsao_preco < (preco_atual * 0.9992) and macro == "BAIXA": return "VENDA"
     except Exception as e:
         print(f"[Erro Rede Neural {ticker}]: {e}")
     return "AGUARDAR"
@@ -140,7 +158,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat(); salvar_memoria()
-            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando neuronios no preco: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
@@ -149,21 +167,21 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
     decisao_neural = treinar_e_prever_rede_neural(df, ticker)
     stops = mem_ativo["consecutivos_stops"]
-    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
-    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0002 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
+    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
+    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"HERCULES NEURAL - COMPRA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - STOP: {sl:,.4f}")
+        enviar_alerta_discord(f"HERCULES NEURAL - COMPRA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - Tendencia Macro Alinhada")
     elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"HERCULES NEURAL - VENDA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - STOP: {sl:,.4f}")
+        enviar_alerta_discord(f"HERCULES NEURAL - VENDA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - Tendencia Macro Alinhada")
 
 if __name__ == "__main__":
     print("[LOG] Iniciando loop do Hércules com Redes Neurais...")
-    enviar_alerta_discord("IA HERCULES CONECTADA - Redes neurais ativas e aprendendo padroes de mercado para OURO, BITCOIN e EURUSD")
+    enviar_alerta_discord("IA HERCULES CONECTADA - Filtro Macro de Tendencia Diario inserido para cortar falsos sinais da Rede Neural.")
     while True:
         try:
             for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
