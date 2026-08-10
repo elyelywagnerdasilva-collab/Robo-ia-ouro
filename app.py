@@ -11,9 +11,9 @@ from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
 
 # ================================================================
-# CONFIGURAÇÃO VITORIOSA - SEU WEBHOOK INTEGRADO DO PRINT
+# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1536174367514562703/mtm7cOx7Adm4FqV-_Vp5Xr2NG_Cepn0Mk3fUhzh_09fyrYYLdduQ4VoFQGz_wSel67fd"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -124,23 +124,23 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
         elif tipo == "VENDA":
             if preco_atual <= (ordem["entrada"] - ((ordem["entrada"] - ordem["tp"]) * 0.5)) and ordem["sl"] > ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
             mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
-            enviar_alerta_discord(f"🏆 REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preço: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat(); salvar_memoria()
-            enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando neuronios: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando neuronios no preco: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
@@ -155,15 +155,15 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"🟢 **HÉRCULES NEURAL - COMPRA ENCONTRADA ({nome_amigavel})** 🟢\n📥 **ENTRADA:** {preco_atual:,.4f}\n🎯 **ALVO (TP):** {tp:,.4f}\n🧠 *Analise:* Decisao por Redes Neurais.")
+        enviar_alerta_discord(f"HERCULES NEURAL - COMPRA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - STOP: {sl:,.4f}")
     elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"🔴 **HÉRCULES NEURAL - VENDA ENCONTRADA ({nome_amigavel})** 🔴\n📥 **ENTRADA:** {preco_atual:,.4f}\n🎯 **ALVO (TP):** {tp:,.4f}\n🧠 *Analise:* Decisao por Redes Neurais.")
+        enviar_alerta_discord(f"HERCULES NEURAL - VENDA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - STOP: {sl:,.4f}")
 
 if __name__ == "__main__":
     print("[LOG] Iniciando loop do Hércules com Redes Neurais...")
-    enviar_alerta_discord("⚡ **Hércules Inteligência Artificial Conectada!**\n🧠 *Upgrade Neural:* Redes neurais ativas e aprendendo padrões de mercado de forma independente para OURO, BITCOIN e EUR/USD!")
+    enviar_alerta_discord("IA HERCULES CONECTADA - Redes neurais ativas e aprendendo padroes de mercado para OURO, BITCOIN e EURUSD")
     while True:
         try:
             for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
