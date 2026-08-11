@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1536728750572699778/b62yUcrUsuQ42s7b_2-4taZJmuRNGmQbjGfsjQnJrFIFEDYohK26m6Zda8yxFPUoi9q7"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -185,10 +185,10 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
 # LOOP DE EXECUÇÃO CONTÍNUA (TRAVA O ROBÔ LIGADO NO RENDER)
 # ================================================================
 if __name__ == "__main__":
-    print("[LOG] Iniciando loop contínuo do robô hélcules...")
-    # Mensagem imediata de inicialização para testar o novo canal do Discord
-    enviar_alerta_discord("🤖 HÉRCULES IA INICIADO COM SUCESSO! Monitorando Ouro, Bitcoin e EUR/USD.")
+    print("[LOG] Testando conexão com o Webhook do Discord...")
+    enviar_alerta_discord("🤖 HÉRCULES IA OPERACIONAL! Nova integração validada com sucesso.")
     
+    print("[LOG] Iniciando loop contínuo do robô hélcules...")
     while True:
         for ticker, nome in ATIVOS_MONITORADOS.items():
             try:
