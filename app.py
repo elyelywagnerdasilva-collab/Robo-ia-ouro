@@ -180,3 +180,17 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
         enviar_alerta_discord(f"ORDEM VENDA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
+
+# ================================================================
+# LOOP DE EXECUÇÃO CONTÍNUA (TRAVA O ROBÔ LIGADO NO RENDER)
+# ================================================================
+if __name__ == "__main__":
+    print("[LOG] Iniciando loop contínuo do robô hélcules...")
+    while True:
+        for ticker, nome in ATIVOS_MONITORADOS.items():
+            try:
+                processar_ciclo_ia_por_ativo(ticker, nome)
+            except Exception as e:
+                print(f"[Erro no ativo {nome}]: {e}")
+        print("[LOG] Ciclo concluído. Aguardando 2 minutos para a próxima análise...")
+        time.sleep(120)  # Pausa de 2 minutos condizente com o gráfico de 2m que você usa
