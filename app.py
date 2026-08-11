@@ -186,6 +186,9 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
 # ================================================================
 if __name__ == "__main__":
     print("[LOG] Iniciando loop contínuo do robô hélcules...")
+    # Mensagem imediata de inicialização para testar o novo canal do Discord
+    enviar_alerta_discord("🤖 HÉRCULES IA INICIADO COM SUCESSO! Monitorando Ouro, Bitcoin e EUR/USD.")
+    
     while True:
         for ticker, nome in ATIVOS_MONITORADOS.items():
             try:
@@ -193,4 +196,4 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"[Erro no ativo {nome}]: {e}")
         print("[LOG] Ciclo concluído. Aguardando 2 minutos para a próxima análise...")
-        time.sleep(120)  # Pausa de 2 minutos condizente com o gráfico de 2m que você usa
+        time.sleep(120)
