@@ -171,22 +171,4 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -0.5:
-        tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"HERCULES NEURAL - COMPRA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - Tendencia Macro Alinhada")
-    elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
-        tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado": estado_atual}; salvar_memoria()
-        enviar_alerta_discord(f"HERCULES NEURAL - VENDA ENCONTRADA EM {nome_amigavel} - ENTRADA: {preco_atual:,.4f} - ALVO TP: {tp:,.4f} - Tendencia Macro Alinhada")
-
-if __name__ == "__main__":
-    print("[LOG] Iniciando loop do Hércules com Redes Neurais...")
-    enviar_alerta_discord("IA HERCULES CONECTADA - Filtro Macro de Tendencia Diario inserido para cortar falsos sinais da Rede Neural.")
-    while True:
-        try:
-            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
-                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
-                time.sleep(5)
-        except Exception as e:
-            print(f"[Erro]: {e}")
-        time.sleep(60)
+        tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - sto
