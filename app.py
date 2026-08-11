@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
-ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
+ARQUIVO_MEMORIA = "memoria_ia_v2_limpa.json"
 
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
@@ -195,3 +195,4 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         salvar_memoria()
         enviar_alerta_discord(f"ORDEM VENDA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
 
+# ================================================================
