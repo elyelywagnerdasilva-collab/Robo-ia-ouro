@@ -13,10 +13,10 @@ from sklearn.preprocessing import StandardScaler
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1536728750572699778/b62yUcrUsuQ42s7b_2-4taZJmuRNGmQbjGfsjQnJrFIFEDYohK26m6Zda8yxFPUoi9q7"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
-ARQUIVO_MEMORIA = "memoria_ia_v2_limpa.json"
+ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
@@ -32,21 +32,16 @@ def enviar_alerta_discord(mensagem):
         print(f"[Erro de Conexão Discord]: {e}")
 
 print("[LOG] Configurando banco de memória da IA...")
-memoria_ia = {}
 if os.path.exists(ARQUIVO_MEMORIA):
     try:
-        with open(ARQUIVO_MEMORIA, 'r') as f:
-            conteudo = f.read().strip()
-            if conteudo:
-                memoria_ia = json.loads(conteudo)
-            else:
-                memoria_ia = {}
-    except Exception as e:
-        print(f"[Aviso] Arquivo de memória corrompido ou inválido. Criando nova memória: {e}")
+        with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
+    except:
         memoria_ia = {}
+else:
+    memoria_ia = {}
 
 for ticker, nome in ATIVOS_MONITORADOS.items():
-    if not isinstance(memoria_ia, dict) or ticker not in memoria_ia:
+    if ticker not in memoria_ia:
         memoria_ia[ticker] = {
             "total_profits": 0, "total_stops": 0, "consecutivos_stops": 0,
             "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
@@ -143,7 +138,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
-        estado_entrada = ordem.get("estado_mercado", estado_atual)
         ganhou, perdeu = False, False
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
@@ -159,17 +153,9 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
-            if estado_entrada not in mem_ativo["q_table"]: mem_ativo["q_table"][estado_entrada] = {}
-            valor_antigo = mem_ativo["q_table"][estado_entrada].get(tipo, 0.0)
-            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo + 1.0
-            
             mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
             enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
-            if estado_entrada not in mem_ativo["q_table"]: mem_ativo["q_table"][estado_entrada] = {}
-            valor_antigo = mem_ativo["q_table"][estado_entrada].get(tipo, 0.0)
-            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo - 1.0
-            
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat(); salvar_memoria()
             enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
@@ -186,13 +172,28 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_mercado": estado_atual}
+        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
         enviar_alerta_discord(f"ORDEM COMPRA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
     elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
-        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_mercado": estado_atual}
+        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
         enviar_alerta_discord(f"ORDEM VENDA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
 
 # ================================================================
+# LOOP DE EXECUÇÃO CONTÍNUA (TRAVA O ROBÔ LIGADO NO RENDER)
+# ================================================================
+if __name__ == "__main__":
+    print("[LOG] Testando conexão com o Webhook do Discord...")
+    enviar_alerta_discord("🤖 HÉRCULES IA OPERACIONAL! Nova integração validada com sucesso.")
+    
+    print("[LOG] Iniciando loop contínuo do robô hélcules...")
+    while True:
+        for ticker, nome in ATIVOS_MONITORADOS.items():
+            try:
+                processar_ciclo_ia_por_ativo(ticker, nome)
+            except Exception as e:
+                print(f"[Erro no ativo {nome}]: {e}")
+        print("[LOG] Ciclo concluído. Aguardando 2 minutos para a próxima análise...")
+        time.sleep(120)
