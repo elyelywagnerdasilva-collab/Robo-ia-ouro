@@ -97,7 +97,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         alvo = df['Close'].shift(-1).ffill().values
         
         X_scaled = ESCALONADORES[ticker].fit_transform(features)
-        MODELOS_NEURANas_parcial_fit = MODELOS_NEURAIS[ticker].partial_fit(X_scaled, alvo)
+        MODELOS_NEURAIS[ticker].partial_fit(X_scaled, alvo)
         
         ultima_linha_features = features[-1].reshape(1, -1)
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
@@ -174,16 +174,9 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         tp, sl = preco_atual * (1 + profit_calc), preco_atual * (1 - stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
-        enviar_alerta_discord(f"🔥 ORD_COMPRA ({nome_amigavel}) | Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
-        
+        enviar_alerta_discord(f"ORDEM COMPRA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
     elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -0.5:
         tp, sl = preco_atual * (1 - profit_calc), preco_atual * (1 + stop_calc)
         mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl}
         salvar_memoria()
-        enviar_alerta_discord(f"💥 ORD_VENDA ({nome_amigavel}) | Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
-    else:
-        print(f"[STATUS] {nome_amigavel}: Condições não atendidas. Aguardando mercado...")
-
-# Executar um ciclo de testes para os ativos cadastrados
-for ticker, nome in ATIVOS_MONITORADOS.items():
-    processar_ciclo_ia_por_ativo(ticker, nome)
+        enviar_alerta_discord(f"ORDEM VENDA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
