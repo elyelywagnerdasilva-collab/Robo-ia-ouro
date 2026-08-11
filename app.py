@@ -32,16 +32,21 @@ def enviar_alerta_discord(mensagem):
         print(f"[Erro de Conexão Discord]: {e}")
 
 print("[LOG] Configurando banco de memória da IA...")
+memoria_ia = {}
 if os.path.exists(ARQUIVO_MEMORIA):
     try:
-        with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
-    except:
+        with open(ARQUIVO_MEMORIA, 'r') as f:
+            conteudo = f.read().strip()
+            if conteudo:
+                memoria_ia = json.loads(conteudo)
+            else:
+                memoria_ia = {}
+    except Exception as e:
+        print(f"[Aviso] Arquivo de memória corrompido ou inválido. Criando nova memória: {e}")
         memoria_ia = {}
-else:
-    memoria_ia = {}
 
 for ticker, nome in ATIVOS_MONITORADOS.items():
-    if ticker not in memoria_ia:
+    if not isinstance(memoria_ia, dict) or ticker not in memoria_ia:
         memoria_ia[ticker] = {
             "total_profits": 0, "total_stops": 0, "consecutivos_stops": 0,
             "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
@@ -156,14 +161,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if ganhou:
             if estado_entrada not in mem_ativo["q_table"]: mem_ativo["q_table"][estado_entrada] = {}
             valor_antigo = mem_ativo["q_table"][estado_entrada].get(tipo, 0.0)
-            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo + 1.0  # Recompensa positiva
+            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo + 1.0
             
             mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
             enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
             if estado_entrada not in mem_ativo["q_table"]: mem_ativo["q_table"][estado_entrada] = {}
             valor_antigo = mem_ativo["q_table"][estado_entrada].get(tipo, 0.0)
-            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo - 1.0  # Punição por erro
+            mem_ativo["q_table"][estado_entrada][tipo] = valor_antigo - 1.0
             
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(hours=1)).isoformat(); salvar_memoria()
@@ -190,8 +195,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         salvar_memoria()
         enviar_alerta_discord(f"ORDEM VENDA ({nome_amigavel}) - Entrada: {preco_atual:,.4f} | TP: {tp:,.4f} | SL: {sl:,.4f}")
 
-# ================================================================
-# LOOP DE EXECUÇÃO CONTÍNUA (TRAVA O ROBÔ LIGADO NO RENDER)
-# ================================================================
-if __name__ == "__main__":
-    print("[LOG] Testando conexão com o Webhook do Discord...")
