@@ -10,9 +10,6 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
 
-# IMPORTAÇÃO DO AGENDADOR COMPATÍVEL COM O RENDER
-from apscheduler.schedulers.blocking import BlockingScheduler
-
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
@@ -203,3 +200,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             salvar_memoria()
             enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
         else:
+            LOG_MOTIVOS[ticker]["Filtro Q-Table Barrou"] += 1
+            
+    else:
