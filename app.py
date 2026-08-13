@@ -17,7 +17,7 @@ URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 
-# AJUSTE PARA O RENDER: Caminho de escrita permitido em servidores Linux
+# Ajuste obrigatório para o Render ler/escrever arquivos no Linux
 ARQUIVO_MEMORIA = "/tmp/memoria_ia_evolutiva_multiativos.json"
 
 MODELOS_NEURAIS = {}
@@ -110,7 +110,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS (0.0003) - Mais entradas no mercado
+        # FILTROS MENOS RÍGIDOS (0.0003)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -200,3 +200,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             sl = preco_atual * (1 + stop_calc)
             mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
             salvar_memoria()
+            enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
+        else:
+            LOG_MOTIVOS[ticker]["Filtro Q-Table Barrou"] += 1
