@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
 
+# IMPORTAÇÃO DO AGENDADOR COMPATÍVEL COM O RENDER
+from apscheduler.schedulers.blocking import BlockingScheduler
+
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
@@ -21,8 +24,6 @@ ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
 
-# CONTROLE DE TEMPO CORRIGIDO PARA AMBIENTE EM NUVEM
-PROXIMO_RELATORIO = None  
 LOG_MOTIVOS = {ticker: {"Rede Neural Mandou Aguardar": 0, "Bloqueado por Stop Recente": 0, "Filtro Q-Table Barrou": 0} for ticker in ATIVOS_MONITORADOS}
 
 def enviar_alerta_discord(mensagem):
@@ -61,7 +62,6 @@ def salvar_memoria():
         print(f"[Erro Memoria]: {e}")
 
 def analisar_macro_tendencia(ticker):
-    """ TRAVA DE SEGURANÇA INSTITUCIONAL: Baixa o grafico de 1 Dia para barrar erros da Rede Neural """
     try:
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if not df_1d.empty:
@@ -109,10 +109,9 @@ def treinar_e_prever_rede_neural(df, ticker):
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
-        # Puxa a tendencia do grafico maior de 1 Dia antes de validar
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS: Reduzido de 0.0008 para 0.0003 de variação mínima
+        # FILTROS MENOS RÍGIDOS (0.0003)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -200,3 +199,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if mem_ativo["q_table"][estado_atual].get("VENDA", 0.0) >= -2.0:
             tp = preco_atual * (1 - profit_calc)
             sl = preco_atual * (1 + stop_calc)
+            mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
+            salvar_memoria()
+            enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
+        else:
