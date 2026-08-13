@@ -21,8 +21,8 @@ ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
 
-# CONTROLE DE TEMPO DEFINIDO PARA 2 HORAS
-PROXIMO_RELATORIO = datetime.now() + timedelta(hours=2)
+# CONTROLE DE TEMPO CORRIGIDO PARA AMBIENTE EM NUVEM
+PROXIMO_RELATORIO = None  
 LOG_MOTIVOS = {ticker: {"Rede Neural Mandou Aguardar": 0, "Bloqueado por Stop Recente": 0, "Filtro Q-Table Barrou": 0} for ticker in ATIVOS_MONITORADOS}
 
 def enviar_alerta_discord(mensagem):
@@ -112,10 +112,9 @@ def treinar_e_prever_rede_neural(df, ticker):
         # Puxa a tendencia do grafico maior de 1 Dia antes de validar
         macro = analisar_macro_tendencia(ticker)
         
-        # Filtro Rigoroso: So aceita prever Compra se o grafico Diario for de Alta
-        if previsao_preco > (preco_atual * 1.0008) and macro == "ALTA": return "COMPRA"
-        # So aceita prever Venda se o grafico Diario for de Baixa
-        elif previsao_preco < (preco_atual * 0.9992) and macro == "BAIXA": return "VENDA"
+        # FILTROS MENOS RÍGIDOS: Reduzido de 0.0008 para 0.0003 de variação mínima
+        if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
+        elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
         print(f"[Erro Rede Neural {ticker}]: {e}")
     return "AGUARDAR"
@@ -187,7 +186,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     if estado_atual not in mem_ativo["q_table"]:
         mem_ativo["q_table"][estado_atual] = {"COMPRA": 0.0, "VENDA": 0.0}
 
-    # Execução e Rastreamento de Decisões
     if decisao_neural == "COMPRA":
         if mem_ativo["q_table"][estado_atual].get("COMPRA", 0.0) >= -2.0:
             tp = preco_atual * (1 + profit_calc)
@@ -201,3 +199,4 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     elif decisao_neural == "VENDA":
         if mem_ativo["q_table"][estado_atual].get("VENDA", 0.0) >= -2.0:
             tp = preco_atual * (1 - profit_calc)
+            sl = preco_atual * (1 + stop_calc)
