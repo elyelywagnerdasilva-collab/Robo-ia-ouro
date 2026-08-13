@@ -17,7 +17,7 @@ URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 
-# CORREÇÃO CRÍTICA DO RENDER: Gravando na pasta com permissão de escrita do Linux
+# Pasta temporária com permissão de escrita nativa no Linux do Render
 ARQUIVO_MEMORIA = "/tmp/memoria_ia_evolutiva_multiativos.json"
 
 MODELOS_NEURAIS = {}
@@ -105,13 +105,13 @@ def treinar_e_prever_rede_neural(df, ticker):
         ultima_linha_features = features[-1].reshape(1, -1)
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
         
-        previsao_preco = MODELOS_NEURAOR[ticker].predict(ultima_linha_scaled) if ticker in MODELOS_NEURAIS else MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
+        # CORREÇÃO DA LINHA DO ERRO FATAL (NOME CORRIGIDO PARA MODELOS_NEURAIS)
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS (Calibrados de 0.0008 para 0.0003 para gerar mais ordens)
+        # FILTROS MENOS RÍGIDOS (Sensibilidade maior configurada em 0.0003)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -200,3 +200,4 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             tp = preco_atual * (1 - profit_calc)
             sl = preco_atual * (1 + stop_calc)
             mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
+            salvar_memoria()
