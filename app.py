@@ -6,6 +6,8 @@ import json
 import time
 import os
 import requests
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
@@ -105,7 +107,6 @@ def treinar_e_prever_rede_neural(df, ticker):
         ultima_linha_features = features[-1].reshape(1, -1)
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
         
-        # CORREÇÃO DA LINHA DO ERRO FATAL (NOME CORRIGIDO PARA MODELOS_NEURAIS)
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
