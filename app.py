@@ -3,9 +3,10 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
-import time
+import asyncio
 import os
 import requests
+import time
 from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
@@ -105,13 +106,12 @@ def treinar_e_prever_rede_neural(df, ticker):
         ultima_linha_features = features[-1].reshape(1, -1)
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
         
-        # SINTAXE TOTALMENTE LIMPA E RECONFERIDA
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS (Sensibilidade de 0.0003)
+        # FILTROS MENOS RÍGIDOS (Sensibilidade calibrada em 0.0003)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
