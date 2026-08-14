@@ -20,14 +20,13 @@ def home():
     return "Hércules Neural operando com sucesso em segundo plano!"
 
 def rodar_servidor_web():
-    # O Render exige ler a porta da variável de ambiente PORT
     porta = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=porta)
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
+# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E CANAL LIMPO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1537847047917408296/3XyBLhgZnprJdwfVeDoAv6G49CwOzLW5CGj4jqw-vZyBgC9JFPdAqGp2IXJKi7p5IO1X"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -210,10 +209,8 @@ def loop_principal_ia():
 # EXECUÇÃO PARALELA (WEB SERVER + INTELIGÊNCIA ARTIFICIAL)
 # ================================================================
 if __name__ == "__main__":
-    # Inicia a IA em uma linha de execução separada (Thread)
     t = Thread(target=loop_principal_ia)
     t.daemon = True
     t.start()
     
-    # Inicia o servidor web na linha principal para o Render validar a porta
     rodar_servidor_web()
