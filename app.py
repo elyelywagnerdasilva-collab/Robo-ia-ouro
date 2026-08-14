@@ -105,12 +105,13 @@ def treinar_e_prever_rede_neural(df, ticker):
         ultima_linha_features = features[-1].reshape(1, -1)
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
         
+        # SINTAXE TOTALMENTE LIMPA E RECONFERIDA
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS (Sensibilidade maior configurada em 0.0003)
+        # FILTROS MENOS RÍGIDOS (Sensibilidade de 0.0003)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -200,5 +201,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             sl = preco_atual * (1 + stop_calc)
             mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
             salvar_memoria()
-            enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
-        else:
