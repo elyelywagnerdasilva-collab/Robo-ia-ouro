@@ -6,8 +6,6 @@ import json
 import time
 import os
 import requests
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
@@ -202,3 +200,5 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             sl = preco_atual * (1 + stop_calc)
             mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
             salvar_memoria()
+            enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
+        else:
