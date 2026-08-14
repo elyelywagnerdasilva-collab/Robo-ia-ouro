@@ -65,7 +65,8 @@ def analisar_macro_tendencia(ticker):
     try:
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if not df_1d.empty:
-            if isinstance(df_1d.columns, pd.MultiIndex): df_1d.columns = df_1d.columns.get_level_values(0)
+            if isinstance(df_1d.columns, pd.MultiIndex): 
+                df_1d.columns = df_1d.columns.get_level_values(0)
             ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
             ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
             return "ALTA" if ma9_1d > ma21_1d else "BAIXA"
@@ -77,8 +78,11 @@ def obter_dados_preparados(ticker):
     try:
         df = yf.download(ticker, period="5d", interval="2m", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        df.columns = df.columns.str.strip()
+        
+        if isinstance(df.columns, pd.MultiIndex): 
+            df.columns = df.columns.get_level_values(0)
+        
+        df.columns = [str(col).strip() for col in df.columns]
         df.ffill(inplace=True)
         
         df['MA9'] = df['Close'].rolling(window=9).mean()
@@ -201,5 +205,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             sl = preco_atual * (1 + stop_calc)
             mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
             salvar_memoria()
-            enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
-        else:
