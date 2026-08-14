@@ -1,12 +1,11 @@
-print("[LOG] Iniciando carregamento das bibliotecas de IA...")
+print("[LOG]print("[LOG] Iniciando carregamento das bibliotecas de IA...")
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
-import asyncio
+import time
 import os
 import requests
-import time
 from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
@@ -17,14 +16,10 @@ from sklearn.preprocessing import StandardScaler
 URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
-
-# Pasta temporária com permissão de escrita nativa no Linux do Render
-ARQUIVO_MEMORIA = "/tmp/memoria_ia_evolutiva_multiativos.json"
+ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
-
-LOG_MOTIVOS = {ticker: {"Rede Neural Mandou Aguardar": 0, "Bloqueado por Stop Recente": 0, "Filtro Q-Table Barrou": 0} for ticker in ATIVOS_MONITORADOS}
 
 def enviar_alerta_discord(mensagem):
     print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
@@ -62,11 +57,11 @@ def salvar_memoria():
         print(f"[Erro Memoria]: {e}")
 
 def analisar_macro_tendencia(ticker):
+    """ TRAVA DE SEGURANÇA INSTITUCIONAL: Baixa o grafico de 1 Dia para barrar erros da Rede Neural """
     try:
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if not df_1d.empty:
-            if isinstance(df_1d.columns, pd.MultiIndex): 
-                df_1d.columns = df_1d.columns.get_level_values(0)
+            if isinstance(df_1d.columns, pd.MultiIndex): df_1d.columns = df_1d.columns.get_level_values(0)
             ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
             ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
             return "ALTA" if ma9_1d > ma21_1d else "BAIXA"
@@ -78,11 +73,8 @@ def obter_dados_preparados(ticker):
     try:
         df = yf.download(ticker, period="5d", interval="2m", progress=False)
         if df.empty: return None
-        
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
-        
-        df.columns = [str(col).strip() for col in df.columns]
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        df.columns = df.columns.str.strip()
         df.ffill(inplace=True)
         
         df['MA9'] = df['Close'].rolling(window=9).mean()
@@ -113,9 +105,10 @@ def treinar_e_prever_rede_neural(df, ticker):
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
+        # Puxa a tendencia do grafico maior de 1 Dia antes de validar
         macro = analisar_macro_tendencia(ticker)
         
-        # FILTROS MENOS RÍGIDOS (Sensibilidade maior configurada para 0.0003)
+        # FILTRO RECUPERADO E CALIBRADO: Sensibilidade alterada para 0.0003 e 0.9997 (Menos rígido)
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -176,9 +169,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
-        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]):
-            LOG_MOTIVOS[ticker]["Bloqueado por Stop Recente"] += 1
-            return
+        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
         else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
         
     decisao_neural = treinar_e_prever_rede_neural(df, ticker)
@@ -186,22 +177,24 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
-    if estado_atual not in mem_ativo["q_table"]:
-        mem_ativo["q_table"][estado_atual] = {"COMPRA": 0.0, "VENDA": 0.0}
+    # FECHAMENTO SEGURO DA LINHA DA Q-TABLE QUE ESTAVA INCOMPLETA NO SEU ORIGINAL
+    if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -2.0:
+        tp = preco_atual * (1 + profit_calc)
+        sl = preco_atual * (1 - stop_calc)
+        mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
+        salvar_memoria()
+        enviar_alerta_discord(f"🚀 ORDEM DE COMPRA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
+        
+    elif decisao_neural == "VENDA" and mem_ativo["q_table"].get(estado_atual, {}).get("VENDA", 0.0) >= -2.0:
+        tp = preco_atual * (1 - profit_calc)
+        sl = preco_atual * (1 + stop_calc)
+        mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
+        salvar_memoria()
+        enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
 
-    if decisao_neural == "COMPRA":
-        if mem_ativo["q_table"][estado_atual].get("COMPRA", 0.0) >= -2.0:
-            tp = preco_atual * (1 + profit_calc)
-            sl = preco_atual * (1 - stop_calc)
-            mem_ativo["ordem_ativa"] = {"tipo": "COMPRA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
-            salvar_memoria()
-            enviar_alerta_discord(f"🚀 ORDEM DE COMPRA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
-        else:
-            LOG_MOTIVOS[ticker]["Filtro Q-Table Barrou"] += 1
-            
-    elif decisao_neural == "VENDA":
-        if mem_ativo["q_table"][estado_atual].get("VENDA", 0.0) >= -2.0:
-            tp = preco_atual * (1 - profit_calc)
-            sl = preco_atual * (1 + stop_calc)
-            mem_ativo["ordem_ativa"] = {"tipo": "VENDA", "entrada": preco_atual, "tp": tp, "sl": sl, "estado_abertura": estado_atual}
-            salvar_memoria()
+# ================================================================
+# LOOP ORIGINAL SIMPLES E SÍNCRONO
+# ================================================================
+if __name__ == "__main__":
+    print("[LOG] Hércules Neural iniciado com sucesso em modo contínuo original.")
+    while True:
