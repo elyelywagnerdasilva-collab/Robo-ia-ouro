@@ -105,10 +105,9 @@ def treinar_e_prever_rede_neural(df, ticker):
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
-        # Puxa a tendencia do grafico maior de 1 Dia antes de validar
         macro = analisar_macro_tendencia(ticker)
         
-        # MODIFICAÇÃO CIRÚRGICA: Sensibilidade alterada para 0.0003 e 0.9997 (Menos rígido)
+        # RIGIDÊS REDUZIDA AQUI: 1.0003 para Compra e 0.9997 para Venda
         if previsao_preco > (preco_atual * 1.0003) and macro == "ALTA": return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro == "BAIXA": return "VENDA"
     except Exception as e:
@@ -177,7 +176,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
-    # FECHAMENTO SEGURO DA Q-TABLE ORIGINAL DO SEU SCRIPT
+    # LOGICA DE FECHAMENTO COMPLETA DA Q-TABLE
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -2.0:
         tp = preco_atual * (1 + profit_calc)
         sl = preco_atual * (1 - stop_calc)
@@ -193,8 +192,11 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
 
 # ================================================================
-# LOOP PRINCIPAL ORIGINAL SÍNCRONO
+# LOOP PRINCIPAL ORIGINAL E PARÁGRAFOS CORRIGIDOS
 # ================================================================
 if __name__ == "__main__":
     print("[LOG] Hércules Neural iniciado com sucesso em modo contínuo original.")
     while True:
+        for ticker, nome in ATIVOS_MONITORADOS.items():
+            try:
+                processar_ciclo_ia_por_ativo(ticker, nome)
