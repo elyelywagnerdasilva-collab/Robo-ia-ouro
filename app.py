@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1536728750572699778/b62yUcrUsuQ42s7b_2-4taZJmuRNGmQbjGfsjQnJrFIFEDYohK26m6Zda8yxFPUoi9q7"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -105,10 +105,9 @@ def treinar_e_prever_rede_neural(df, ticker):
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
         
-        # Puxa a tendencia do grafico maior de 1 Dia antes de validar
         macro = analisar_macro_tendencia(ticker)
         
-        # [MODIFICADO] Filtro Flexível: Exige variação menor (0.03%) e aceita tendência "NEUTRO"
+        # Filtro Flexível: Reduzido para exigir variação de apenas 0.03% e aceitar mercado Lateral/Neutro
         if previsao_preco > (preco_atual * 1.0003) and macro in ["ALTA", "NEUTRO"]: 
             return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro in ["BAIXA", "NEUTRO"]: 
@@ -159,7 +158,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
-            # [MODIFICADO] Tempo de molho reduzido de 1 hora para 15 minutos
+            # Tempo de molho reduzido para 15 minutos
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
             enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
@@ -173,4 +172,33 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
-    # O restante do seu loop de execução de ordens continua aqui...
+    if decisao_neural in ["COMPRA", "VENDA"]:
+        # Execução padrão simplificada para substituição segura da lógica de ordens incompleta
+        tp_preco = preco_atual * (1 + profit_calc) if decisao_neural == "COMPRA" else preco_atual * (1 - profit_calc)
+        sl_preco = preco_atual * (1 - stop_calc) if decisao_neural == "COMPRA" else preco_atual * (1 + stop_calc)
+        
+        mem_ativo["ordem_ativa"] = {
+            "tipo": decisao_neural, "entrada": preco_atual, "tp": tp_preco, "sl": sl_preco, "data": datetime.now().isoformat()
+        }
+        salvar_memoria()
+        enviar_alerta_discord(f"🔥 NOVA ORDEM ({nome_amigavel}) - {decisao_neural}\nEntrada: {preco_atual:,.4f} | TP: {tp_preco:,.4f} | SL: {sl_preco:,.4f}")
+
+# ================================================================
+# LOOP PRINCIPAL DE EXECUÇÃO CONTÍNUA
+# ================================================================
+if __name__ == "__main__":
+    enviar_alerta_discord("🚀 [SISTEMA] Hércules Neural iniciado com sucesso no Render!")
+    
+    while True:
+        try:
+            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
+                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
+                time.sleep(5)
+            
+            print("[LOG] Ciclo concluído. Aguardando 120 segundos para a próxima varredura...")
+            time.sleep(120)
+            
+        except Exception as e:
+            print(f"[ERRO CRÍTICO NO LOOP]: {e}")
+            enviar_alerta_discord(f"⚠️ [ALERTA] Erro inesperado no loop principal: {e}")
+            time.sleep(30)
