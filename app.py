@@ -177,7 +177,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
-    # LOGICA DE FECHAMENTO COMPLETA DA Q-TABLE ORIGINAL DO SEU SCRIPT
     if decisao_neural == "COMPRA" and mem_ativo["q_table"].get(estado_atual, {}).get("COMPRA", 0.0) >= -2.0:
         tp = preco_atual * (1 + profit_calc)
         sl = preco_atual * (1 - stop_calc)
@@ -192,9 +191,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         salvar_memoria()
         enviar_alerta_discord(f"🔻 ORDEM DE VENDA EXECUTADA ({nome_amigavel})\nPreço: {preco_atual:,.4f}\nTP: {tp:,.4f}\nSL: {sl:,.4f}")
 
-# ================================================================
-# LOOP PRINCIPAL ORIGINAL SÍNCRONO INTEIRAMENTE ALINHADO
-# ================================================================
-if __name__ == "__main__":
-    print("[LOG] Hércules Neural iniciado com sucesso em modo contínuo original.")
+def executar_loop_infinito():
     while True:
+        for t, n in ATIVOS_MONITORADOS.items():
+            try: processar_ciclo_ia_por_ativo(t, n)
+            except Exception as e: print(f"[Erro]: {e}")
+            time.sleep(2)
+        print("[LOG] Aguardando 2 minutos...")
+        time.sleep(120)
+
+if __name__ == "__main__":
+    print("[LOG] Hércules Neural iniciado em modo contínuo original.")
