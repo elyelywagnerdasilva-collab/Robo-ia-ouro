@@ -2,4 +2,3 @@ yfinance
 pandas
 numpy
 requests
-scikit-learn
