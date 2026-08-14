@@ -9,6 +9,20 @@ import requests
 from datetime import datetime, timedelta
 from sklearn.linear_model import SGDRegressor
 from sklearn.preprocessing import StandardScaler
+from flask import Flask
+from threading import Thread
+
+# Configuração do Flask para manter o Web Service do Render ativo
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Hércules Neural operando com sucesso em segundo plano!"
+
+def rodar_servidor_web():
+    # O Render exige ler a porta da variável de ambiente PORT
+    porta = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=porta)
 
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E VALIDADO
@@ -57,7 +71,6 @@ def salvar_memoria():
         print(f"[Erro Memoria]: {e}")
 
 def analisar_macro_tendencia(ticker):
-    """ Filtro Macrotendência: Retorna ALTA, BAIXA ou NEUTRO baseado no diário """
     try:
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if not df_1d.empty:
@@ -107,7 +120,6 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # Filtro Flexível: Reduzido para exigir variação de apenas 0.03% e aceitar mercado Lateral/Neutro
         if previsao_preco > (preco_atual * 1.0003) and macro in ["ALTA", "NEUTRO"]: 
             return "COMPRA"
         elif previsao_preco < (preco_atual * 0.9997) and macro in ["BAIXA", "NEUTRO"]: 
@@ -158,7 +170,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
-            # Tempo de molho reduzido para 15 minutos
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
             enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
@@ -173,7 +184,6 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
     if decisao_neural in ["COMPRA", "VENDA"]:
-        # Execução padrão simplificada para substituição segura da lógica de ordens incompleta
         tp_preco = preco_atual * (1 + profit_calc) if decisao_neural == "COMPRA" else preco_atual * (1 - profit_calc)
         sl_preco = preco_atual * (1 - stop_calc) if decisao_neural == "COMPRA" else preco_atual * (1 + stop_calc)
         
@@ -183,22 +193,27 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         salvar_memoria()
         enviar_alerta_discord(f"🔥 NOVA ORDEM ({nome_amigavel}) - {decisao_neural}\nEntrada: {preco_atual:,.4f} | TP: {tp_preco:,.4f} | SL: {sl_preco:,.4f}")
 
-# ================================================================
-# LOOP PRINCIPAL DE EXECUÇÃO CONTÍNUA
-# ================================================================
-if __name__ == "__main__":
+def loop_principal_ia():
     enviar_alerta_discord("🚀 [SISTEMA] Hércules Neural iniciado com sucesso no Render!")
-    
     while True:
         try:
             for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
                 processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
                 time.sleep(5)
-            
-            print("[LOG] Ciclo concluído. Aguardando 120 segundos para a próxima varredura...")
+            print("[LOG] Ciclo concluído. Aguardando 120 segundos...")
             time.sleep(120)
-            
         except Exception as e:
             print(f"[ERRO CRÍTICO NO LOOP]: {e}")
-            enviar_alerta_discord(f"⚠️ [ALERTA] Erro inesperado no loop principal: {e}")
             time.sleep(30)
+
+# ================================================================
+# EXECUÇÃO PARALELA (WEB SERVER + INTELIGÊNCIA ARTIFICIAL)
+# ================================================================
+if __name__ == "__main__":
+    # Inicia a IA em uma linha de execução separada (Thread)
+    t = Thread(target=loop_principal_ia)
+    t.daemon = True
+    t.start()
+    
+    # Inicia o servidor web na linha principal para o Render validar a porta
+    rodar_servidor_web()
