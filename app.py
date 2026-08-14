@@ -1,4 +1,4 @@
-print("[LOG]print("[LOG] Iniciando carregamento das bibliotecas de IA...")
+print("[LOG] Iniciando carregamento das bibliotecas de IA...")
 import yfinance as yf
 import pandas as pd
 import numpy as np
