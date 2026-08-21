@@ -26,26 +26,13 @@ def rodar_servidor_web():
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E CANAL LIMPO
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1537847047917408296/3XyBLhgZnprJdwfVeDoAv6G49CwOzLW5CGj4jqw-vZyBgC9JFPdAqGp2IXJKi7p5IO1X"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
 
 MODELOS_NEURAIS = {}
 ESCALONADORES = {}
-
-# ================================================================
-# FÓRMULA DE EXIBIÇÃO TEXTUAL CONVERTIDA PARA EXNOVA
-# ================================================================
-def formatar_texto_para_exnova(ticker_yahoo, preco_yahoo):
-    """Muda o formato visual para bater milimetricamente com o painel Exnova."""
-    if ticker_yahoo == "GC=F":
-        return f"${preco_yahoo:,.2f}"  # Ouro com 2 casas
-    elif ticker_yahoo == "BTC-USD":
-        return f"${preco_yahoo:,.2f}"  # Bitcoin arredondado padrão
-    elif ticker_yahoo == "EURUSD=X":
-        return f"{preco_yahoo:,.5f}"   # Euro/Dólar travado em 5 casas (Forex)
-    return str(preco_yahoo)
 
 def enviar_alerta_discord(mensagem):
     print(f"[LOG] Enviando para o Discord: {str(mensagem[:40])}...")
@@ -157,9 +144,8 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     if df is None or len(df) < 100: return
     
     preco_atual, high_atual, low_atual = float(df['Close'].iloc[-1]), float(df['High'].iloc[-1]), float(df['Low'].iloc[-1])
+    estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
-    
-    p_print = formatar_texto_para_exnova(ticker, preco_atual)
     
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
@@ -168,23 +154,23 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop no Alvo Exnova: {formatar_texto_para_exnova(ticker, ordem['sl'])}")
+                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
         elif tipo == "VENDA":
             if preco_atual <= (ordem["entrada"] - ((ordem["entrada"] - ordem["tp"]) * 0.5)) and ordem["sl"] > ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop no Alvo Exnova: {formatar_texto_para_exnova(ticker, ordem['sl'])}")
+                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
             mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
-            enviar_alerta_discord(f"💰 **REDE NEURAL ACERTOU!** ({nome_amigavel}) - Vitória no Preço Exnova: {p_print}")
+            enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
-            enviar_alerta_discord(f"🚨 **STOP LOSS ACIONADO** ({nome_amigavel}) - Loss verificado no preço Exnova: {p_print}")
+            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
 
     if mem_ativo.get("horario_bloqueio_ate"):
@@ -197,20 +183,34 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
     
     if decisao_neural in ["COMPRA", "VENDA"]:
-        tp_calc = preco_atual * (1 + profit_calc) if decisao_neural == "COMPRA" else preco_atual * (1 - profit_calc)
-        sl_calc = preco_atual * (1 - stop_calc) if decisao_neural == "COMPRA" else preco_atual * (1 + stop_calc)
+        tp_preco = preco_atual * (1 + profit_calc) if decisao_neural == "COMPRA" else preco_atual * (1 - profit_calc)
+        sl_preco = preco_atual * (1 - stop_calc) if decisao_neural == "COMPRA" else preco_atual * (1 + stop_calc)
         
         mem_ativo["ordem_ativa"] = {
-            "tipo": decisao_neural,
-            "entrada": preco_atual,
-            "tp": tp_calc,
-            "sl": sl_calc,
-            "horario": datetime.now().isoformat()
+            "tipo": decisao_neural, "entrada": preco_atual, "tp": tp_preco, "sl": sl_preco, "data": datetime.now().isoformat()
         }
         salvar_memoria()
-        
-        tp_print = formatar_texto_para_exnova(ticker, tp_calc)
-        sl_print = formatar_texto_para_exnova(ticker, sl_calc)
-        
-        enviar_alerta_discord(f"🚀 **NOVA OPERAÇÃO DETECTADA**\n🔹 **Ativo:** {nome_amigavel}\n🔹 **Direção:** {decisao_neural}\n🔹 **Cotação Atual Exnova:** {p_print}\n🔹 **Alvo de Ganho (TP):** {tp_print}\n🔹 **Limite de Perda (SL):** {sl_print}")
+        enviar_alerta_discord(f"🔥 NOVA ORDEM ({nome_amigavel}) - {decisao_neural}\nEntrada: {preco_atual:,.4f} | TP: {tp_preco:,.4f} | SL: {sl_preco:,.4f}")
 
+def loop_principal_ia():
+    enviar_alerta_discord("🚀 [SISTEMA] Hércules Neural iniciado com sucesso no Render!")
+    while True:
+        try:
+            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
+                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
+                time.sleep(5)
+            print("[LOG] Ciclo concluído. Aguardando 120 segundos...")
+            time.sleep(120)
+        except Exception as e:
+            print(f"[ERRO CRÍTICO NO LOOP]: {e}")
+            time.sleep(30)
+
+# ================================================================
+# EXECUÇÃO PARALELA (WEB SERVER + INTELIGÊNCIA ARTIFICIAL)
+# ================================================================
+if __name__ == "__main__":
+    t = Thread(target=loop_principal_ia)
+    t.daemon = True
+    t.start()
+    
+    rodar_servidor_web()
