@@ -1,6 +1,6 @@
+yfinance
 pandas
 numpy
-requests
 scikit-learn
 flask
-websocket-client
+requests
