@@ -47,7 +47,6 @@ def enviar_alerta_discord(mensagem):
 print("[LOG] Configurando banco de memória da IA...")
 memoria_ia = {}
 
-# CORREÇÃO CRÍTICA: Sistema anti-travamento de arquivo JSON corrompido/preso no Render
 try:
     if os.path.exists(ARQUIVO_MEMORIA):
         with open(ARQUIVO_MEMORIA, 'r', encoding='utf-8', errors='ignore') as f:
@@ -55,10 +54,9 @@ try:
             if conteudo:
                 memoria_ia = json.loads(conteudo)
 except Exception as e:
-    print(f"[Aviso] Arquivo de memória travado ou corrompido, iniciando modo RAM seguro: {e}")
+    print(f"[Aviso] Falha ao ler arquivo de memoria, operando em modo RAM: {e}")
     memoria_ia = {}
 
-# Garante que a estrutura interna seja criada perfeitamente na RAM mesmo se o arquivo falhar
 for ticker, nome in ATIVOS_MONITORADOS.items():
     if not isinstance(memoria_ia, dict) or ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
         memoria_ia[ticker] = {}
@@ -78,14 +76,9 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
         if chave not in memoria_ia[ticker]:
             memoria_ia[ticker][chave] = valor_padrao
             
-    MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
+    # CORREÇÃO CRÍTICA: warm_start=True permite que o partial_fit inicialize sozinho e de forma nativa sem travar
+    MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005, warm_start=True)
     ESCALONADORES[ticker] = StandardScaler()
-    
-    # Inicialização preventiva de segurança das dimensões (6 colunas com volume incluído)
-    X_ficticio = np.random.rand(10, 6)
-    y_ficticio = np.random.rand(10)
-    X_ficticio_scaled = ESCALONADORES[ticker].fit_transform(X_ficticio)
-    MODELOS_NEURAIS[ticker].fit(X_ficticio_scaled, y_ficticio)
 
 def salvar_memoria():
     try:
@@ -148,7 +141,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL (100% INTACTO) ---
+        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -228,3 +221,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat()
             salvar_memoria()
+            enviar_alerta_discord(f"❌ STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
+        return
+
+    # 2. VERIFICAÇÃO DE BLOQUEIO POR TIMEOUT
+    if mem_ativo.get("horario_bloqueio_ate"):
+        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): 
+            return
+        else: 
+            mem_ativo["horario_bloqueio_ate"] = None
+            salvar_memoria()
+        
