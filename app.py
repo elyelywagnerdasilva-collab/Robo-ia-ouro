@@ -47,18 +47,15 @@ def enviar_alerta_discord(mensagem):
 print("[LOG] Configurando banco de memória da IA...")
 memoria_ia = {}
 
-# Leitura protegida: Se falhar ou o Render bloquear, inicia com o dicionário limpo na RAM
-try:
-    if os.path.exists(ARQUIVO_MEMORIA):
+if os.path.exists(ARQUIVO_MEMORIA):
+    try:
         with open(ARQUIVO_MEMORIA, 'r') as f:
             conteudo = f.read().strip()
             if conteudo:
                 memoria_ia = json.loads(conteudo)
-except Exception as e:
-    print(f"[Aviso Inicialização]: Executando memória temporária na RAM. Detalhe: {e}")
-    memoria_ia = {}
-
-if not isinstance(memoria_ia, dict):
+    except:
+        memoria_ia = {}
+else:
     memoria_ia = {}
 
 for ticker, nome in ATIVOS_MONITORADOS.items():
@@ -85,11 +82,10 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
 
 def salvar_memoria():
     try:
-        # Se o Render permitir a escrita local, ele salva; se bloquear, o robô continua rodando normalmente sem cair
-        with open(ARQUIVO_MEMORIA, 'w') as f:
+        with open(ARQUIVO_MEMORIA, 'w') as f: 
             json.dump(memoria_ia, f, indent=4)
     except Exception as e:
-        print(f"[LOG Memória Intermediária]: Dados mantidos atualizados em tempo real na memória RAM.")
+        print(f"[Aviso Memória]: Executando armazenamento em cache RAM temporário: {e}")
 
 def analisar_macro_tendencia(ticker):
     try:
@@ -143,7 +139,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- INDICADOR DE EXAUSTÃO ---
+        # --- RASTREADOR DE EXAUSTÃO (CAÇA-STOP) ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -195,6 +191,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
         ganhou, perdeu = False, False
+        
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]
@@ -219,7 +216,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
 
-    # 2. MONITORAMENTO DE ORDEM PENDENTE (AGUARDANDO O CAÇA-STOP)
+    # 2. MONITORAMENTO DE ORDEM PENDENTE (ARMADILHA DO CAÇA-STOP)
     if mem_ativo.get("ordem_pendente") is not None:
         pendente = mem_ativo["ordem_pendente"]
         tipo_p = pendente["tipo"]
@@ -230,3 +227,11 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
         if ativou:
             mem_ativo["ordem_ativa"] = {
+                "tipo": tipo_p,
+                "entrada": pendente["gatilho"],
+                "tp": pendente["tp"],
+                "sl": pendente["sl"],
+                "horario": datetime.now().isoformat()
+            }
+            mem_ativo["ordem_pendente"] = None
+            salvar_memoria()
