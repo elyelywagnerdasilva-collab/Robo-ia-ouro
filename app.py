@@ -44,22 +44,25 @@ def enviar_alerta_discord(mensagem):
 
 print("[LOG] Configurando banco de memória da IA...")
 memoria_ia = {}
+
 if os.path.exists(ARQUIVO_MEMORIA):
     try:
-        with open(ARQUIVO_MEMORIA, 'r') as f: 
+        with open(ARQUIVO_MEMORIA, 'r') as f:
             conteudo = f.read().strip()
-            if conteudo:  # Verifica se o arquivo não está completamente vazio
+            if conteudo:
                 memoria_ia = json.loads(conteudo)
+            else:
+                memoria_ia = {}
     except Exception as e:
-        print(f"[Aviso Memoria]: Arquivo corrompido detectado, resetando... Erro: {e}")
+        print(f"[Aviso Inicialização]: JSON inválido detectado. Resetando memória. Detalhe: {e}")
         memoria_ia = {}
+else:
+    memoria_ia = {}
 
-# Garante que todos os ativos monitorados possuam TODOS os campos novos necessários
 for ticker, nome in ATIVOS_MONITORADOS.items():
     if ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
         memoria_ia[ticker] = {}
         
-    # Preenchimento forçado de segurança para evitar quebras de chaves antigas
     campos_obrigatorios = {
         "total_profits": 0,
         "total_stops": 0,
@@ -70,6 +73,7 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
         "ordem_pendente": None,
         "horario_bloqueio_ate": None
     }
+    
     for chave, valor_padrao in campos_obrigatorios.items():
         if chave not in memoria_ia[ticker]:
             memoria_ia[ticker][chave] = valor_padrao
@@ -77,12 +81,11 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
 
-# Salva imediatamente para corrigir o arquivo físico no Render
 try:
-    with open(ARQUIVO_MEMORIA, 'w') as f: 
+    with open(ARQUIVO_MEMORIA, 'w') as f:
         json.dump(memoria_ia, f, indent=4)
 except Exception as e:
-    print(f"[Erro Inicializacao Memoria]: {e}")
+    print(f"[Erro Crítico ao Gravar Memória]: {e}")
 
 def analisar_macro_tendencia(ticker):
     try:
@@ -228,3 +231,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
         ativou = False
         if tipo_p == "COMPRA" and low_atual <= pendente["gatilho"]: ativou = True
+        elif tipo_p == "VENDA" and high_atual >= pendente["gatilho"]: ativou = True
+            
+        if ativou:
+            mem_ativo["ordem_ativa"] = {
