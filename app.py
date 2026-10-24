@@ -25,7 +25,7 @@ def rodar_servidor_web():
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1537847047917408296/3XyBLhgZnprJdwfVeDoAv6G49CwOzLW5CGj4jqw-vZyBgC9JFPdAqGp2IXJKi7p5IO1X"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -43,29 +43,46 @@ def enviar_alerta_discord(mensagem):
         print(f"[Erro Discord]: {e}")
 
 print("[LOG] Configurando banco de memória da IA...")
+memoria_ia = {}
 if os.path.exists(ARQUIVO_MEMORIA):
     try:
-        with open(ARQUIVO_MEMORIA, 'r') as f: memoria_ia = json.load(f)
-    except:
+        with open(ARQUIVO_MEMORIA, 'r') as f: 
+            conteudo = f.read().strip()
+            if conteudo:  # Verifica se o arquivo não está completamente vazio
+                memoria_ia = json.loads(conteudo)
+    except Exception as e:
+        print(f"[Aviso Memoria]: Arquivo corrompido detectado, resetando... Erro: {e}")
         memoria_ia = {}
-else:
-    memoria_ia = {}
 
+# Garante que todos os ativos monitorados possuam TODOS os campos novos necessários
 for ticker, nome in ATIVOS_MONITORADOS.items():
-    if ticker not in memoria_ia:
-        memoria_ia[ticker] = {
-            "total_profits": 0, "total_stops": 0, "consecutivos_stops": 0,
-            "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
-            "ordem_ativa": None, "ordem_pendente": None, "horario_bloqueio_ate": None
-        }
+    if ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
+        memoria_ia[ticker] = {}
+        
+    # Preenchimento forçado de segurança para evitar quebras de chaves antigas
+    campos_obrigatorios = {
+        "total_profits": 0,
+        "total_stops": 0,
+        "consecutivos_stops": 0,
+        "ajuste_stop_base": 0.0020,
+        "ajuste_profit_base": 0.0040,
+        "ordem_ativa": None,
+        "ordem_pendente": None,
+        "horario_bloqueio_ate": None
+    }
+    for chave, valor_padrao in campos_obrigatorios.items():
+        if chave not in memoria_ia[ticker]:
+            memoria_ia[ticker][chave] = valor_padrao
+
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
 
-def salvar_memoria():
-    try:
-        with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
-    except Exception as e:
-        print(f"[Erro Memoria]: {e}")
+# Salva imediatamente para corrigir o arquivo físico no Render
+try:
+    with open(ARQUIVO_MEMORIA, 'w') as f: 
+        json.dump(memoria_ia, f, indent=4)
+except Exception as e:
+    print(f"[Erro Inicializacao Memoria]: {e}")
 
 def analisar_macro_tendencia(ticker):
     try:
@@ -117,7 +134,6 @@ def treinar_e_prever_rede_neural(df, ticker):
         preco_atual = float(df['Close'].iloc[-1])
         macro = analisar_macro_tendencia(ticker)
         
-        # --- RASTREADOR DE ANTECIPAÇÃO POR EXAUSTÃO SEGURO ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -172,24 +188,36 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
-                ordem["sl"] = ordem["entrada"]; salvar_memoria()
+                ordem["sl"] = ordem["entrada"]
+                try:
+                    with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
+                except: pass
                 enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na entrada: {ordem['sl']:,.4f}")
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
             
         elif tipo == "VENDA":
             if preco_atual <= (ordem["entrada"] - ((ordem["entrada"] - ordem["tp"]) * 0.5)) and ordem["sl"] > ordem["entrada"]:
-                ordem["sl"] = ordem["entrada"]; salvar_memoria()
+                ordem["sl"] = ordem["entrada"]
+                try:
+                    with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
+                except: pass
                 enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na entrada: {ordem['sl']:,.4f}")
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
-            mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
+            mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None
+            try:
+                with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
+            except: pass
             enviar_alerta_discord(f"🎯 PEGAMOS A VIRADA DE MÃO! ({nome_amigavel}) - Lucro: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
-            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
+            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat()
+            try:
+                with open(ARQUIVO_MEMORIA, 'w') as f: json.dump(memoria_ia, f, indent=4)
+            except: pass
             enviar_alerta_discord(f"🚨 STOP DA VIRADA ACIONADO ({nome_amigavel}): {preco_atual:,.4f}")
         return
 
@@ -200,24 +228,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
         ativou = False
         if tipo_p == "COMPRA" and low_atual <= pendente["gatilho"]: ativou = True
-        elif tipo_p == "VENDA" and high_atual >= pendente["gatilho"]: ativou = True
-            
-        if ativou:
-            mem_ativo["ordem_ativa"] = {
-                "tipo": tipo_p, "entrada": pendente["gatilho"], "tp": pendente["tp"], "sl": pendente["sl"], "horario": datetime.now().isoformat()
-            }
-            mem_ativo["ordem_pendente"] = None; salvar_memoria()
-            enviar_alerta_discord(f"⚡ **VIRADA DE MÃO EXECUTADA!** Ativo: {nome_amigavel} | Entramos contra a armadilha em: {pendente['gatilho']:,.4f}")
-            return
-        
-        horario_p = datetime.fromisoformat(pendente["horario"])
-        if datetime.now() > (horario_p + timedelta(hours=1)):
-            mem_ativo["ordem_pendente"] = None; salvar_memoria()
-            enviar_alerta_discord(f"⏱️ Estrutura de picos antiga expirada para {nome_amigavel}.")
-        return
-
-    if mem_ativo.get("horario_bloqueio_ate"):
-        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
-        else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
-        
-    # 3. ANÁLISE DE EXAUSTÃO DE ONDAS PARA ENGATILHAR ORDEM LIMITE
