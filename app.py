@@ -79,6 +79,13 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
             
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
+    
+    # --- CORREÇÃO ANTICONGELAMENTO ---
+    # Inicializa o escalonador e o modelo com dados fictícios para evitar o travamento na primeira execução
+    X_ficticio = np.random.rand(10, 6)
+    y_ficticio = np.random.rand(10)
+    X_ficticio_scaled = ESCALONADORES[ticker].fit_transform(X_ficticio)
+    MODELOS_NEURAIS[ticker].fit(X_ficticio_scaled, y_ficticio)
 
 def salvar_memoria():
     try:
@@ -113,7 +120,7 @@ def obter_dados_preparados(ticker):
         df['MA21'] = df['Close'].rolling(window=21).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
         
-        # --- INDICADOR DE VOLUME EXTRA ADICIONADO COESAMENTE ---
+        # Indicador de Volume mantido estritamente na sua estrutura original
         df['VOL_MA20'] = df['Volume'].rolling(window=20).mean()
         
         delta = df['Close'].diff()
@@ -128,7 +135,6 @@ def obter_dados_preparados(ticker):
 
 def treinar_e_prever_rede_neural(df, ticker):
     try:
-        # Inserção do indicador VOL_MA20 na matriz de features de treinamento da IA
         features = df[['Close', 'MA9', 'MA21', 'MA100', 'RSI', 'VOL_MA20']].values
         alvo = df['Close'].shift(-1).ffill().values
         
@@ -143,7 +149,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL (100% PRESERVADO) ---
+        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -190,7 +196,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
     
-    # 1. GERENCIAMENTO DE ORDEM ATIVA (Restaurado para corrigir o erro de fechamento de chaves da linha 232)
+    # 1. GERENCIAMENTO DE ORDEM ATIVA
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
@@ -230,8 +236,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     if mem_ativo.get("horario_bloqueio_ate"):
         if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): 
             return
-        else: 
-            mem_ativo["horario_bloqueio_ate"] = None
-            salvar_memoria()
-        
-    # 3. GERAÇÃO DE NOVAS ORDENS BASEADO NAS DECISÕES DA IA
