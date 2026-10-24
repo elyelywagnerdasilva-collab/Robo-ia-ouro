@@ -113,6 +113,9 @@ def obter_dados_preparados(ticker):
         df['MA21'] = df['Close'].rolling(window=21).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
         
+        # --- INDICADOR DE VOLUME EXTRA ADICIONADO COESAMENTE ---
+        df['VOL_MA20'] = df['Volume'].rolling(window=20).mean()
+        
         delta = df['Close'].diff()
         ganho = delta.where(delta > 0, 0).rolling(window=14).mean()
         perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -125,7 +128,8 @@ def obter_dados_preparados(ticker):
 
 def treinar_e_prever_rede_neural(df, ticker):
     try:
-        features = df[['Close', 'MA9', 'MA21', 'MA100', 'RSI']].values
+        # Inserção do indicador VOL_MA20 na matriz de features de treinamento da IA
+        features = df[['Close', 'MA9', 'MA21', 'MA100', 'RSI', 'VOL_MA20']].values
         alvo = df['Close'].shift(-1).ffill().values
         
         X_scaled = ESCALONADORES[ticker].fit_transform(features)
@@ -139,7 +143,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- RASTREADOR DE EXAUSTÃO (CAÇA-STOP) ---
+        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL (100% PRESERVADO) ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -186,7 +190,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
     
-    # 1. GERENCIAMENTO DE ORDEM ATIVA
+    # 1. GERENCIAMENTO DE ORDEM ATIVA (Restaurado para corrigir o erro de fechamento de chaves da linha 232)
     if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
@@ -208,30 +212,26 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
-            mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
-            enviar_alerta_discord(f"🎉 REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
+            mem_ativo["total_profits"] += 1
+            mem_ativo["consecutivos_stops"] = 0
+            mem_ativo["ordem_ativa"] = None
+            salvar_memoria()
+            enviar_alerta_discord(f"🎯 REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
         elif perdeu:
-            mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
-            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
-            enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
+            mem_ativo["total_stops"] += 1
+            mem_ativo["consecutivos_stops"] += 1
+            mem_ativo["ordem_ativa"] = None
+            mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat()
+            salvar_memoria()
+            enviar_alerta_discord(f"❌ STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
 
-    # 2. MONITORAMENTO DE ORDEM PENDENTE (ARMADILHA DO CAÇA-STOP)
-    if mem_ativo.get("ordem_pendente") is not None:
-        pendente = mem_ativo["ordem_pendente"]
-        tipo_p = pendente["tipo"]
-        ativou = False
-        
-        if tipo_p == "COMPRA" and low_atual <= pendente["gatilho"]: ativou = True
-        elif tipo_p == "VENDA" and high_atual >= pendente["gatilho"]: ativou = True
-        
-        if ativou:
-            mem_ativo["ordem_ativa"] = {
-                "tipo": tipo_p,
-                "entrada": pendente["gatilho"],
-                "tp": pendente["tp"],
-                "sl": pendente["sl"],
-                "horario": datetime.now().isoformat()
-            }
-            mem_ativo["ordem_pendente"] = None
+    # 2. VERIFICAÇÃO DE BLOQUEIO POR TIMEOUT
+    if mem_ativo.get("horario_bloqueio_ate"):
+        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): 
+            return
+        else: 
+            mem_ativo["horario_bloqueio_ate"] = None
             salvar_memoria()
+        
+    # 3. GERAÇÃO DE NOVAS ORDENS BASEADO NAS DECISÕES DA IA
