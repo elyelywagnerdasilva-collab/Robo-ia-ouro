@@ -76,7 +76,6 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
         if chave not in memoria_ia[ticker]:
             memoria_ia[ticker][chave] = valor_padrao
             
-    # CORREÇÃO CRÍTICA: warm_start=True permite que o partial_fit inicialize sozinho e de forma nativa sem travar
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005, warm_start=True)
     ESCALONADORES[ticker] = StandardScaler()
 
@@ -90,12 +89,13 @@ def salvar_memoria():
 def analisar_macro_tendencia(ticker):
     try:
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False, threads=False)
-        if not df_1d.empty:
-            if isinstance(df_1d.columns, pd.MultiIndex): 
-                df_1d.columns = df_1d.columns.get_level_values(0)
-            ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
-            ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
-            return "ALTA" if ma9_1d > ma21_1d else "BAIXA"
+        if df_1d is None or df_1d.empty:
+            return "NEUTRO"
+        if isinstance(df_1d.columns, pd.MultiIndex): 
+            df_1d.columns = df_1d.columns.get_level_values(0)
+        ma9_1d = df_1d['Close'].rolling(window=9).mean().iloc[-1]
+        ma21_1d = df_1d['Close'].rolling(window=21).mean().iloc[-1]
+        return "ALTA" if ma9_1d > ma21_1d else "BAIXA"
     except Exception as e:
         print(f"[Erro Macro {ticker}]: {e}")
     return "NEUTRO"
@@ -103,7 +103,10 @@ def analisar_macro_tendencia(ticker):
 def obter_dados_preparados(ticker):
     try:
         df = yf.download(ticker, period="5d", interval="2m", progress=False, threads=False)
-        if df.empty: return None
+        # CONTROLE DE MERCADO FECHADO: Evita travar caso o DataFrame venha vazio no fim de semana
+        if df is None or df.empty or len(df) < 50: 
+            return None
+            
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
         df.columns = df.columns.str.strip()
@@ -180,7 +183,9 @@ def obter_estado_mercado(df):
 def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     print(f"[LOG] Hércules Neural analisando: {nome_amigavel}...")
     df = obter_dados_preparados(ticker)
-    if df is None or len(df) < 50: return
+    if df is None or len(df) < 50:
+        print(f"[Aviso {nome_amigavel}]: Sem dados recentes da API (Mercado fechado ou sem liquidez).")
+        return
     
     preco_atual = float(df['Close'].iloc[-1])
     high_atual = float(df['High'].iloc[-1])
@@ -226,9 +231,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
 
     # 2. VERIFICAÇÃO DE BLOQUEIO POR TIMEOUT
     if mem_ativo.get("horario_bloqueio_ate"):
-        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): 
-            return
-        else: 
-            mem_ativo["horario_bloqueio_ate"] = None
-            salvar_memoria()
-        
