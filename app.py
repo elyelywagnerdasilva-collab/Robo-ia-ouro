@@ -12,21 +12,20 @@ from sklearn.preprocessing import StandardScaler
 from flask import Flask
 from threading import Thread
 
-# Configuração do Flask para manter o Web Service do Render ativo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Hércules Neural operando com sucesso em segundo plano!"
+    return "Hércules Neural operando com Antecipação de Reversão Exaustiva!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=porta)
+    app.run(host='0.0.0.0', port=porta, debug=False, use_reloader=False)
 
 # ================================================================
-# CONFIGURAÇÃO DEFINITIVA - SEU WEBHOOK NOVO E CANAL LIMPO
+# CONFIGURAÇÃO DEFINITIVA
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1537847047917408296/3XyBLhgZnprJdwfVeDoAv6G49CwOzLW5CGj4jqw-vZyBgC9JFPdAqGp2IXJKi7p5IO1X"
+URL_DISCORD_WEBHOOK = "https://discord.com"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -40,9 +39,8 @@ def enviar_alerta_discord(mensagem):
     payload = json.dumps({"content": str(mensagem)})
     try:
         response = requests.post(URL_DISCORD_WEBHOOK, data=payload, headers=headers, timeout=10)
-        print(f"[Resposta Discord]: Status {response.status_code}")
     except Exception as e:
-        print(f"[Erro de Conexão Discord]: {e}")
+        print(f"[Erro Discord]: {e}")
 
 print("[LOG] Configurando banco de memória da IA...")
 if os.path.exists(ARQUIVO_MEMORIA):
@@ -58,7 +56,7 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
         memoria_ia[ticker] = {
             "total_profits": 0, "total_stops": 0, "consecutivos_stops": 0,
             "ajuste_stop_base": 0.0020, "ajuste_profit_base": 0.0040,
-            "ordem_ativa": None, "horario_bloqueio_ate": None, "q_table": {}
+            "ordem_ativa": None, "ordem_pendente": None, "horario_bloqueio_ate": None
         }
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
@@ -97,6 +95,11 @@ def obter_dados_preparados(ticker):
         ganho = delta.where(delta > 0, 0).rolling(window=14).mean()
         perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         df['RSI'] = 100 - (100 / (1 + (ganho / (perda + 1e-9))))
+        
+        # Mapeamento de Topos e Fundos Locais para detectar os múltiplos picos/vales
+        df['Fundo_Local'] = df['Low'].rolling(window=5, center=True).min()
+        df['Topo_Local'] = df['High'].rolling(window=5, center=True).max()
+        
         df.dropna(inplace=True)
         return df
     except Exception as e:
@@ -116,12 +119,29 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
         preco_atual = df['Close'].iloc[-1]
-        
         macro = analisar_macro_tendencia(ticker)
         
-        if previsao_preco > (preco_atual * 1.0003) and macro in ["ALTA", "NEUTRO"]: 
+        # --- RASTREADOR DE ANTECIPAÇÃO POR EXAUSTÃO (MÚLTIPLOS PICOS) ---
+        # Olhamos o comportamento dos últimos candles para ver se o preço renovou mínima mas o RSI cansou
+        low_atual = df['Low'].iloc[-1]
+        high_atual = df['High'].iloc[-1]
+        rsi_atual = df['RSI'].iloc[-1]
+        
+        # Busca referências de 10 a 15 candles atrás (pico anterior do mercado)
+        low_anterior = df['Low'].iloc[-15:-5].min()
+        high_anterior = df['High'].iloc[-15:-5].max()
+        rsi_no_low_anterior = df['RSI'].iloc[-15:-5].min()
+        rsi_no_high_anterior = df['RSI'].iloc[-15:-5].max()
+        
+        # Condição de Virada de Mão de Alta (Preço cai fazendo novo pico descendente, mas o RSI subiu)
+        caca_stop_3picos_compra = (low_atual < low_anterior) and (rsi_atual > rsi_no_low_anterior) and (rsi_atual < 35)
+        
+        # Condição de Virada de Mão de Baixa (Preço sobe fazendo novo pico ascendente, mas o RSI caiu)
+        caca_stop_3picos_venda = (high_atual > high_anterior) and (rsi_atual < rsi_no_high_anterior) and (rsi_atual > 65)
+        
+        if (previsao_preco > (preco_atual * 1.0003) and macro in ["ALTA", "NEUTRO"]) or caca_stop_3picos_compra: 
             return "COMPRA"
-        elif previsao_preco < (preco_atual * 0.9997) and macro in ["BAIXA", "NEUTRO"]: 
+        elif (previsao_preco < (preco_atual * 0.9997) and macro in ["BAIXA", "NEUTRO"]) or caca_stop_3picos_venda: 
             return "VENDA"
             
     except Exception as e:
@@ -143,74 +163,57 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     df = obter_dados_preparados(ticker)
     if df is None or len(df) < 100: return
     
-    preco_atual, high_atual, low_atual = float(df['Close'].iloc[-1]), float(df['High'].iloc[-1]), float(df['Low'].iloc[-1])
+    preco_atual = float(df['Close'].iloc[-1])
+    high_atual = float(df['High'].iloc[-1])
+    low_atual = float(df['Low'].iloc[-1])
     estado_atual = obter_estado_mercado(df)
     mem_ativo = memoria_ia[ticker]
     
-    if mem_ativo["ordem_ativa"] is not None:
+    # 1. GERENCIAMENTO DE ORDEM OPERANDO
+    if mem_ativo.get("ordem_ativa") is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
         ganhou, perdeu = False, False
+        
         if tipo == "COMPRA":
             if preco_atual >= (ordem["entrada"] + ((ordem["tp"] - ordem["entrada"]) * 0.5)) and ordem["sl"] < ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na entrada: {ordem['sl']:,.4f}")
             if high_atual >= ordem["tp"]: ganhou = True
             elif low_atual <= ordem["sl"]: perdeu = True
+            
         elif tipo == "VENDA":
             if preco_atual <= (ordem["entrada"] - ((ordem["entrada"] - ordem["tp"]) * 0.5)) and ordem["sl"] > ordem["entrada"]:
                 ordem["sl"] = ordem["entrada"]; salvar_memoria()
-                enviar_alerta_discord(f"DEFESA NEURAL ({nome_amigavel}) - Stop na Entrada: {ordem['sl']:,.4f}")
+                enviar_alerta_discord(f"🛡️ DEFESA NEURAL ({nome_amigavel}) - Stop na entrada: {ordem['sl']:,.4f}")
             if low_atual <= ordem["tp"]: ganhou = True
             elif high_atual >= ordem["sl"]: perdeu = True
             
         if ganhou:
             mem_ativo["total_profits"] += 1; mem_ativo["consecutivos_stops"] = 0; mem_ativo["ordem_ativa"] = None; salvar_memoria()
-            enviar_alerta_discord(f"REDE NEURAL ACERTOU! ({nome_amigavel}) - Lucro no preco: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"🎯 PEGAMOS A VIRADA DE MÃO! ({nome_amigavel}) - Lucro: {preco_atual:,.4f}")
         elif perdeu:
             mem_ativo["total_stops"] += 1; mem_ativo["consecutivos_stops"] += 1; mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat(); salvar_memoria()
-            enviar_alerta_discord(f"STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
+            enviar_alerta_discord(f"🚨 STOP DA VIRADA ACIONADO ({nome_amigavel}): {preco_atual:,.4f}")
         return
 
-    if mem_ativo.get("horario_bloqueio_ate"):
-        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
-        else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
+    # 2. MONITORAMENTO DA ARMADILHA PENDENTE
+    if mem_ativo.get("ordem_pendente") is not None:
+        pendente = mem_ativo["ordem_pendente"]
+        tipo_p = pendente["tipo"]
         
-    decisao_neural = treinar_e_prever_rede_neural(df, ticker)
-    stops = mem_ativo["consecutivos_stops"]
-    stop_calc = mem_ativo["ajuste_stop_base"] + (0.0005 * stops) if stops > 0 else mem_ativo["ajuste_stop_base"]
-    profit_calc = mem_ativo["ajuste_profit_base"] - (0.0003 * stops) if stops > 0 else mem_ativo["ajuste_profit_base"]
-    
-    if decisao_neural in ["COMPRA", "VENDA"]:
-        tp_preco = preco_atual * (1 + profit_calc) if decisao_neural == "COMPRA" else preco_atual * (1 - profit_calc)
-        sl_preco = preco_atual * (1 - stop_calc) if decisao_neural == "COMPRA" else preco_atual * (1 + stop_calc)
+        ativou = False
+        if tipo_p == "COMPRA" and low_atual <= pendente["gatilho"]: ativou = True
+        elif tipo_p == "VENDA" and high_atual >= pendente["gatilho"]: ativou = True
+            
+        if ativou:
+            mem_ativo["ordem_ativa"] = {
+                "tipo": tipo_p, "entrada": pendente["gatilho"], "tp": pendente["tp"], "sl": pendente["sl"], "horario": datetime.now().isoformat()
+            }
+            mem_ativo["ordem_pendente"] = None; salvar_memoria()
+            enviar_alerta_discord(f"⚡ **VIRADA DE MÃO EXECUTADA!** Ativo: {nome_amigavel} | Entramos contra a armadilha em: {pendente['gatilho']:,.4f}")
+            return
         
-        mem_ativo["ordem_ativa"] = {
-            "tipo": decisao_neural, "entrada": preco_atual, "tp": tp_preco, "sl": sl_preco, "data": datetime.now().isoformat()
-        }
-        salvar_memoria()
-        enviar_alerta_discord(f"🔥 NOVA ORDEM ({nome_amigavel}) - {decisao_neural}\nEntrada: {preco_atual:,.4f} | TP: {tp_preco:,.4f} | SL: {sl_preco:,.4f}")
-
-def loop_principal_ia():
-    enviar_alerta_discord("🚀 [SISTEMA] Hércules Neural iniciado com sucesso no Render!")
-    while True:
-        try:
-            for ticker, nome_amigavel in ATIVOS_MONITORADOS.items():
-                processar_ciclo_ia_por_ativo(ticker, nome_amigavel)
-                time.sleep(5)
-            print("[LOG] Ciclo concluído. Aguardando 120 segundos...")
-            time.sleep(120)
-        except Exception as e:
-            print(f"[ERRO CRÍTICO NO LOOP]: {e}")
-            time.sleep(30)
-
-# ================================================================
-# EXECUÇÃO PARALELA (WEB SERVER + INTELIGÊNCIA ARTIFICIAL)
-# ================================================================
-if __name__ == "__main__":
-    t = Thread(target=loop_principal_ia)
-    t.daemon = True
-    t.start()
-    
-    rodar_servidor_web()
+        horario_p = datetime.fromisoformat(pendente["horario"])
+        if datetime.now() > (horario_p + timedelta(hours=1)):
