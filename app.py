@@ -80,8 +80,7 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
     
-    # --- CORREÇÃO ANTICONGELAMENTO ---
-    # Inicializa o escalonador e o modelo com dados fictícios para evitar o travamento na primeira execução
+    # Inicialização segura das dimensões com a nova feature de volume inclusa (6 colunas)
     X_ficticio = np.random.rand(10, 6)
     y_ficticio = np.random.rand(10)
     X_ficticio_scaled = ESCALONADORES[ticker].fit_transform(X_ficticio)
@@ -96,7 +95,8 @@ def salvar_memoria():
 
 def analisar_macro_tendencia(ticker):
     try:
-        df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        # CORREÇÃO ANTICONGELAMENTO: threads=False adicionado para evitar travar o Render
+        df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False, threads=False)
         if not df_1d.empty:
             if isinstance(df_1d.columns, pd.MultiIndex): 
                 df_1d.columns = df_1d.columns.get_level_values(0)
@@ -109,7 +109,8 @@ def analisar_macro_tendencia(ticker):
 
 def obter_dados_preparados(ticker):
     try:
-        df = yf.download(ticker, period="5d", interval="2m", progress=False)
+        # CORREÇÃO ANTICONGELAMENTO: threads=False adicionado para evitar travar o Render
+        df = yf.download(ticker, period="5d", interval="2m", progress=False, threads=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
@@ -120,7 +121,7 @@ def obter_dados_preparados(ticker):
         df['MA21'] = df['Close'].rolling(window=21).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
         
-        # Indicador de Volume mantido estritamente na sua estrutura original
+        # Média de volume alinhada estritamente com os tipos originais do DataFrame
         df['VOL_MA20'] = df['Volume'].rolling(window=20).mean()
         
         delta = df['Close'].diff()
@@ -233,6 +234,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         return
 
     # 2. VERIFICAÇÃO DE BLOQUEIO POR TIMEOUT
-    if mem_ativo.get("horario_bloqueio_ate"):
-        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): 
-            return
