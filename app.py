@@ -25,7 +25,7 @@ def rodar_servidor_web():
 # ================================================================
 # CONFIGURAÇÃO DEFINITIVA
 # ================================================================
-URL_DISCORD_WEBHOOK = "https://discord.com"
+URL_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1537847047917408296/3XyBLhgZnprJdwfVeDoAv6G49CwOzLW5CGj4jqw-vZyBgC9JFPdAqGp2IXJKi7p5IO1X"
 
 ATIVOS_MONITORADOS = {"GC=F": "OURO", "BTC-USD": "BITCOIN", "EURUSD=X": "EUR/USD"}
 ARQUIVO_MEMORIA = "memoria_ia_evolutiva_multiativos.json"
@@ -96,10 +96,6 @@ def obter_dados_preparados(ticker):
         perda = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         df['RSI'] = 100 - (100 / (1 + (ganho / (perda + 1e-9))))
         
-        # Mapeamento de Topos e Fundos Locais para detectar os múltiplos picos/vales
-        df['Fundo_Local'] = df['Low'].rolling(window=5, center=True).min()
-        df['Topo_Local'] = df['High'].rolling(window=5, center=True).max()
-        
         df.dropna(inplace=True)
         return df
     except Exception as e:
@@ -118,26 +114,25 @@ def treinar_e_prever_rede_neural(df, ticker):
         ultima_linha_scaled = ESCALONADORES[ticker].transform(ultima_linha_features)
         
         previsao_preco = MODELOS_NEURAIS[ticker].predict(ultima_linha_scaled)
-        preco_atual = df['Close'].iloc[-1]
+        preco_atual = float(df['Close'].iloc[-1])
         macro = analisar_macro_tendencia(ticker)
         
-        # --- RASTREADOR DE ANTECIPAÇÃO POR EXAUSTÃO (MÚLTIPLOS PICOS) ---
-        # Olhamos o comportamento dos últimos candles para ver se o preço renovou mínima mas o RSI cansou
-        low_atual = df['Low'].iloc[-1]
-        high_atual = df['High'].iloc[-1]
-        rsi_atual = df['RSI'].iloc[-1]
+        # --- RASTREADOR DE ANTECIPAÇÃO POR EXAUSTÃO SEGURO ---
+        low_atual = float(df['Low'].iloc[-1])
+        high_atual = float(df['High'].iloc[-1])
+        rsi_atual = float(df['RSI'].iloc[-1])
         
-        # Busca referências de 10 a 15 candles atrás (pico anterior do mercado)
-        low_anterior = df['Low'].iloc[-15:-5].min()
-        high_anterior = df['High'].iloc[-15:-5].max()
-        rsi_no_low_anterior = df['RSI'].iloc[-15:-5].min()
-        rsi_no_high_anterior = df['RSI'].iloc[-15:-5].max()
+        caca_stop_3picos_compra = False
+        caca_stop_3picos_venda = False
         
-        # Condição de Virada de Mão de Alta (Preço cai fazendo novo pico descendente, mas o RSI subiu)
-        caca_stop_3picos_compra = (low_atual < low_anterior) and (rsi_atual > rsi_no_low_anterior) and (rsi_atual < 35)
-        
-        # Condição de Virada de Mão de Baixa (Preço sobe fazendo novo pico ascendente, mas o RSI caiu)
-        caca_stop_3picos_venda = (high_atual > high_anterior) and (rsi_atual < rsi_no_high_anterior) and (rsi_atual > 65)
+        if len(df) >= 30:
+            low_anterior = float(df['Low'].iloc[-25:-5].min())
+            high_anterior = float(df['High'].iloc[-25:-5].max())
+            rsi_no_low_anterior = float(df['RSI'].iloc[-25:-5].min())
+            rsi_no_high_anterior = float(df['RSI'].iloc[-25:-5].max())
+            
+            caca_stop_3picos_compra = (low_atual < low_anterior) and (rsi_atual > rsi_no_low_anterior) and (rsi_atual < 35)
+            caca_stop_3picos_venda = (high_atual > high_anterior) and (rsi_atual < rsi_no_high_anterior) and (rsi_atual > 65)
         
         if (previsao_preco > (preco_atual * 1.0003) and macro in ["ALTA", "NEUTRO"]) or caca_stop_3picos_compra: 
             return "COMPRA"
@@ -161,7 +156,7 @@ def obter_estado_mercado(df):
 def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     print(f"[LOG] Hércules Neural analisando: {nome_amigavel}...")
     df = obter_dados_preparados(ticker)
-    if df is None or len(df) < 100: return
+    if df is None or len(df) < 50: return
     
     preco_atual = float(df['Close'].iloc[-1])
     high_atual = float(df['High'].iloc[-1])
@@ -217,3 +212,12 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
         
         horario_p = datetime.fromisoformat(pendente["horario"])
         if datetime.now() > (horario_p + timedelta(hours=1)):
+            mem_ativo["ordem_pendente"] = None; salvar_memoria()
+            enviar_alerta_discord(f"⏱️ Estrutura de picos antiga expirada para {nome_amigavel}.")
+        return
+
+    if mem_ativo.get("horario_bloqueio_ate"):
+        if datetime.now() < datetime.fromisoformat(mem_ativo["horario_bloqueio_ate"]): return
+        else: mem_ativo["horario_bloqueio_ate"] = None; salvar_memoria()
+        
+    # 3. ANÁLISE DE EXAUSTÃO DE ONDAS PARA ENGATILHAR ORDEM LIMITE
