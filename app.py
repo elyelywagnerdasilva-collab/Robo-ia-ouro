@@ -47,19 +47,20 @@ def enviar_alerta_discord(mensagem):
 print("[LOG] Configurando banco de memória da IA...")
 memoria_ia = {}
 
-if os.path.exists(ARQUIVO_MEMORIA):
-    try:
-        with open(ARQUIVO_MEMORIA, 'r') as f:
+# CORREÇÃO CRÍTICA: Sistema anti-travamento de arquivo JSON corrompido/preso no Render
+try:
+    if os.path.exists(ARQUIVO_MEMORIA):
+        with open(ARQUIVO_MEMORIA, 'r', encoding='utf-8', errors='ignore') as f:
             conteudo = f.read().strip()
             if conteudo:
                 memoria_ia = json.loads(conteudo)
-    except:
-        memoria_ia = {}
-else:
+except Exception as e:
+    print(f"[Aviso] Arquivo de memória travado ou corrompido, iniciando modo RAM seguro: {e}")
     memoria_ia = {}
 
+# Garante que a estrutura interna seja criada perfeitamente na RAM mesmo se o arquivo falhar
 for ticker, nome in ATIVOS_MONITORADOS.items():
-    if ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
+    if not isinstance(memoria_ia, dict) or ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
         memoria_ia[ticker] = {}
     
     campos_obrigatorios = {
@@ -80,7 +81,7 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
     MODELOS_NEURAIS[ticker] = SGDRegressor(max_iter=2000, tol=1e-4, learning_rate='adaptive', eta0=0.005)
     ESCALONADORES[ticker] = StandardScaler()
     
-    # Inicialização segura das dimensões com a nova feature de volume inclusa (6 colunas)
+    # Inicialização preventiva de segurança das dimensões (6 colunas com volume incluído)
     X_ficticio = np.random.rand(10, 6)
     y_ficticio = np.random.rand(10)
     X_ficticio_scaled = ESCALONADORES[ticker].fit_transform(X_ficticio)
@@ -88,14 +89,13 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
 
 def salvar_memoria():
     try:
-        with open(ARQUIVO_MEMORIA, 'w') as f: 
+        with open(ARQUIVO_MEMORIA, 'w', encoding='utf-8') as f: 
             json.dump(memoria_ia, f, indent=4)
     except Exception as e:
         print(f"[Aviso Memória]: Executando armazenamento em cache RAM temporário: {e}")
 
 def analisar_macro_tendencia(ticker):
     try:
-        # CORREÇÃO ANTICONGELAMENTO: threads=False adicionado para evitar travar o Render
         df_1d = yf.download(ticker, period="3mo", interval="1d", progress=False, threads=False)
         if not df_1d.empty:
             if isinstance(df_1d.columns, pd.MultiIndex): 
@@ -109,7 +109,6 @@ def analisar_macro_tendencia(ticker):
 
 def obter_dados_preparados(ticker):
     try:
-        # CORREÇÃO ANTICONGELAMENTO: threads=False adicionado para evitar travar o Render
         df = yf.download(ticker, period="5d", interval="2m", progress=False, threads=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): 
@@ -121,7 +120,6 @@ def obter_dados_preparados(ticker):
         df['MA21'] = df['Close'].rolling(window=21).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
         
-        # Média de volume alinhada estritamente com os tipos originais do DataFrame
         df['VOL_MA20'] = df['Volume'].rolling(window=20).mean()
         
         delta = df['Close'].diff()
@@ -150,7 +148,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL ---
+        # --- SEU RASTREADOR DE EXAUSTÃO ORIGINAL (100% INTACTO) ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -230,7 +228,3 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             mem_ativo["ordem_ativa"] = None
             mem_ativo["horario_bloqueio_ate"] = (datetime.now() + timedelta(minutes=15)).isoformat()
             salvar_memoria()
-            enviar_alerta_discord(f"❌ STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
-        return
-
-    # 2. VERIFICAÇÃO DE BLOQUEIO POR TIMEOUT
