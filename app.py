@@ -47,7 +47,7 @@ def enviar_alerta_discord(mensagem):
 print("[LOG] Configurando banco de memória da IA...")
 memoria_ia = {}
 
-# Leitura isolada contra corrupção e falhas de persistência do Render
+# Leitura protegida: Se falhar ou o Render bloquear, inicia com o dicionário limpo na RAM
 try:
     if os.path.exists(ARQUIVO_MEMORIA):
         with open(ARQUIVO_MEMORIA, 'r') as f:
@@ -55,13 +55,12 @@ try:
             if conteudo:
                 memoria_ia = json.loads(conteudo)
 except Exception as e:
-    print(f"[Aviso Inicialização]: Resetando cache de arquivo corrompido: {e}")
+    print(f"[Aviso Inicialização]: Executando memória temporária na RAM. Detalhe: {e}")
     memoria_ia = {}
 
 if not isinstance(memoria_ia, dict):
     memoria_ia = {}
 
-# Mapeia a estrutura original garantindo os campos necessários para o indicador
 for ticker, nome in ATIVOS_MONITORADOS.items():
     if ticker not in memoria_ia or not isinstance(memoria_ia[ticker], dict):
         memoria_ia[ticker] = {}
@@ -86,16 +85,11 @@ for ticker, nome in ATIVOS_MONITORADOS.items():
 
 def salvar_memoria():
     try:
-        # Gravação atômica para evitar corrupção durante reinicializações no Render
-        arquivo_temp = ARQUIVO_MEMORIA + ".tmp"
-        with open(arquivo_temp, 'w') as f:
+        # Se o Render permitir a escrita local, ele salva; se bloquear, o robô continua rodando normalmente sem cair
+        with open(ARQUIVO_MEMORIA, 'w') as f:
             json.dump(memoria_ia, f, indent=4)
-        os.replace(arquivo_temp, ARQUIVO_MEMORIA)
     except Exception as e:
-        print(f"[Erro Memoria]: {e}")
-
-# Força uma gravação limpa inicial para validar as permissões de IO do contêiner
-salvar_memoria()
+        print(f"[LOG Memória Intermediária]: Dados mantidos atualizados em tempo real na memória RAM.")
 
 def analisar_macro_tendencia(ticker):
     try:
@@ -149,7 +143,7 @@ def treinar_e_prever_rede_neural(df, ticker):
         
         macro = analisar_macro_tendencia(ticker)
         
-        # --- ESTRUTURA REVISADA DO INDICADOR DE EXAUSTÃO ---
+        # --- INDICADOR DE EXAUSTÃO ---
         low_atual = float(df['Low'].iloc[-1])
         high_atual = float(df['High'].iloc[-1])
         rsi_atual = float(df['RSI'].iloc[-1])
@@ -197,7 +191,7 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
     mem_ativo = memoria_ia[ticker]
     
     # 1. GERENCIAMENTO DE ORDEM ATIVA
-    if mem_ativo.get("ordem_ativa") is not None:
+    if mem_ativo["ordem_ativa"] is not None:
         ordem = mem_ativo["ordem_ativa"]
         tipo = ordem.get("tipo", "COMPRA")
         ganhou, perdeu = False, False
@@ -225,9 +219,14 @@ def processar_ciclo_ia_por_ativo(ticker, nome_amigavel):
             enviar_alerta_discord(f"🚨 STOP LOSS ACIONADO ({nome_amigavel}) - Recalibrando os neuronios: {preco_atual:,.4f}")
         return
 
-    # 2. MONITORAMENTO DE ORDEM PENDENTE (INDICADOR EXAUSTÃO)
+    # 2. MONITORAMENTO DE ORDEM PENDENTE (AGUARDANDO O CAÇA-STOP)
     if mem_ativo.get("ordem_pendente") is not None:
         pendente = mem_ativo["ordem_pendente"]
         tipo_p = pendente["tipo"]
         ativou = False
         
+        if tipo_p == "COMPRA" and low_atual <= pendente["gatilho"]: ativou = True
+        elif tipo_p == "VENDA" and high_atual >= pendente["gatilho"]: ativou = True
+        
+        if ativou:
+            mem_ativo["ordem_ativa"] = {
